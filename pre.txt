@@ -1,3 +1,4 @@
 tokyo
 osaka
 kyoto
+hakata
