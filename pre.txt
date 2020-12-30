@@ -2,3 +2,5 @@ tokyo
 osaka
 kyoto
 hakata
+sendai
+fukushima
