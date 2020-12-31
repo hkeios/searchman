@@ -2,5 +2,5 @@ tokyo
 osaka
 kyoto
 hakata
-sendai
+miyagi
 hakata
