@@ -3,4 +3,4 @@ osaka
 kyoto
 hakata
 sendai
-fukushima
+hakata
