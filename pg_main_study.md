@@ -10,7 +10,7 @@
 ※wal bufferには更新データを保存。データ更新は、共有バッファとWALバッファに対して行われる。
 
 
-* VACUUM処理の流れ
+* VACUUM処理の流れ  
 ・SharedUpdateExecuteLockをかける  
 　→VACUUM処理中もテーブルの読書可  
 ・VisibilityMapをもとに不可視タプルを含むブロックのみ処理を行う  
@@ -28,7 +28,7 @@ OS:vacuumdb {DB}
 |6|CLOGを更新||
 
 
-* VACUUM FULLの流れ
+* VACUUM FULLの流れ  
 ・処理の流れはVACUUMと同様。ただ、大きな違いとして下記点が挙げられる。  
 ・AccessExclusiveLockをかける  
 　→処理中の読書不可  
