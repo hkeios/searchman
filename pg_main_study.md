@@ -118,7 +118,8 @@ masterがslaveに必要なWALを判別して、自動削除しないように操
 
 #### レプリケーション【非同期】
 
-<master側>  
+#####master側
+
 ${PGDATA}/postgresql.conf  
 
 |設定|内容|
@@ -134,7 +135,8 @@ ${PGDATA}/postgresql.conf
 * レプリケーションスロット設定
 `select * from pg_create_physical_replication_slot('repl_slot')`
 
-<slave側>  
+##### slave側
+
 ${PGDATA}/recovery.conf  
 
 |設定|内容|備考|
@@ -147,7 +149,8 @@ ${PGDATA}/recovery.conf
 
 #### レプリケーション【同期】
 
-<master側>  
+#####master側
+
 ${PGDATA}/postgresql.conf  
 
 |設定|内容|備考|
@@ -170,7 +173,8 @@ ${PGDATA}/postgresql.conf
 * レプリケーションスロット設定
 `select * from pg_create_physical_replication_slot('repl_slot')`
 
-<slave側>  
+#####slave側
+
 ${PGDATA}/postgresql.conf  
 
 |設定|内容|備考|
