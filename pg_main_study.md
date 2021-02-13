@@ -101,14 +101,97 @@ OS:vacuumdb {DB}
 |5.|WALログファイルに同期書き込み||
 |6.|CLOGの更新、XIDをCOMMITEDに変更。VACUUMが削除するまで残る||
 
-前回のチェックポイント後に、初めてタプルが追加されたブロックは、ブロック全体をWALへ書き込む。
+前回のチェックポイント後に、初めてタプルが追加されたブロックは、ブロック全体をWALへ書き込む。  
 同じブロックへのタプルの追加は差分のみWALへ書き込む
 
 * FILFACTOR
-ブロックの使用率が指定の値以上になった場合、不要なタプルを削除して有効なタプルを並び替える。
+ブロックの使用率が指定の値以上になった場合、不要なタプルを削除して有効なタプルを並び替える。  
 空き領域を確保しておくことで、データがブロックにまたがることを防ぐ。
 
 * Index Only Scan
 selectの検索がインデックスのKeyのみの場合、テーブルへのアクセスを省略する。
 VisibilityMapを見て、可視のブロックはIndexOnlyScan、それ以外はテーブルまでアクセスを実施する。
 
+
+* レプリケーションスロット
+masterがslaveに必要なWALを判別して、自動削除しないように操作する仕組み。レプリケーション方法と合わせて、下記に設定を示す。  
+
+#### レプリケーション【非同期】
+
+<master側>  
+${PGDATA}/postgresql.conf  
+
+|設定|内容|
+|-|-|
+|max_wal_senders=2|1以上|
+|wal_level=replica||
+|archive_mode=on|スタンバイDBの数⁺1|
+|max_replication_slots=1|スタンバイDBの数|
+|archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※|WALをアーカイブ領域にコピーするコマンド<br>※設定例|
+|synchronous_commit=※1|同期レベル|
+|synchronous_standby_names=設定なし|この設定で同期か非同期に分かれる|
+
+* レプリケーションスロット設定
+`select * from pg_create_physical_replication_slot('repl_slot')`
+
+<slave側>  
+${PGDATA}/recovery.conf  
+
+|設定|内容|備考|
+|-|-|-|
+|standby_mode-on||
+|primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※|プライマリへの接続情報<br>※設定例<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
+|primary_slot_name=`repl_slot`|マスターのレプリケーションスロット名|
+|recovery_target_timeline=latest||
+|restore_command=’cp /pg_archive/%f %p’ ※|アーカイブをpg_walに戻すコマンド<br>※設定例|
+
+#### レプリケーション【同期】
+
+<master側>  
+${PGDATA}/postgresql.conf  
+
+|設定|内容|備考|
+|-|-|-|
+|hot_standby=on||
+
+${PGDATA}/postgresql.conf  
+
+|設定|内容|
+|-|-|
+|max_wal_senders=2|1以上|
+|wal_level=replica|V9.5以前のarchive、hot_standbyに相当|
+|archive_mode=on|スタンバイDBの数⁺1|
+|max_replication_slots=1|スタンバイDBの数|
+|archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※|WALをアーカイブ領域にコピーするコマンド<br>※設定例|
+|synchronous_commit=※1|同期レベル|
+|synchronous_standby_names='slave1'|同期するスタンバイ名|
+|host_standby_feedback=on|自身の情報をマスターに送信|
+
+* レプリケーションスロット設定
+`select * from pg_create_physical_replication_slot('repl_slot')`
+
+<slave側>  
+${PGDATA}/postgresql.conf  
+
+|設定|内容|備考|
+|-|-|-|
+|hot_standby=on||
+
+${PGDATA}/recovery.conf  
+
+|設定|内容|備考|
+|-|-|-|
+|standby_mode=on||
+|primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※|プライマリへの接続情報<br>※設定例<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
+|primary_slot_name=`repl_slot`|マスターのレプリケーションスロット名|
+|recovery_target_timeline=latest||
+|restore_command=’cp /pg_archive/%f %p’ ※|アーカイブをpg_walに戻すコマンド<br>※設定例|
+
+※1 非同期/同期に関連するパラメータ
+
+||synchronous_standby_names||
+|-|-|-|
+|synchronous_commit|設定なし|設定あり|
+|off|プライマリのWALも非同期で書き込む||
+|local|プライマリのWALは同期書き込み、スタンバイは非同期||
+|on|プライマリのWALのみ同期書き込み|スタンバイのWALを同期で書き込むのをプライマリは待つ|
