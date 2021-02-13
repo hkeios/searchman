@@ -141,7 +141,7 @@ ${PGDATA}/recovery.conf
 |-|-|-|
 |standby_mode-on||
 |primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※|プライマリへの接続情報<br>※設定例<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
-|primary_slot_name=`repl_slot`|マスターのレプリケーションスロット名|
+|primary_slot_name='repl_slot'|マスターのレプリケーションスロット名|
 |recovery_target_timeline=latest||
 |restore_command=’cp /pg_archive/%f %p’ ※|アーカイブをpg_walに戻すコマンド<br>※設定例|
 
@@ -152,7 +152,7 @@ ${PGDATA}/postgresql.conf
 
 |設定|内容|備考|
 |-|-|-|
-|hot_standby=on||
+|hot_standby=on|スレーブで検索系SQLを受け付けるか|
 
 ${PGDATA}/postgresql.conf  
 
@@ -175,7 +175,7 @@ ${PGDATA}/postgresql.conf
 
 |設定|内容|備考|
 |-|-|-|
-|hot_standby=on||
+|hot_standby=on|スレーブで検索系SQLを受け付けるか|
 
 ${PGDATA}/recovery.conf  
 
@@ -183,15 +183,15 @@ ${PGDATA}/recovery.conf
 |-|-|-|
 |standby_mode=on||
 |primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※|プライマリへの接続情報<br>※設定例<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
-|primary_slot_name=`repl_slot`|マスターのレプリケーションスロット名|
+|primary_slot_name='repl_slot'|マスターのレプリケーションスロット名|
 |recovery_target_timeline=latest||
 |restore_command=’cp /pg_archive/%f %p’ ※|アーカイブをpg_walに戻すコマンド<br>※設定例|
 
 ※1 非同期/同期に関連するパラメータ
 
-||synchronous_standby_names||
+||\2. synchronous_standby_names||
 |-|-|-|
-|synchronous_commit|設定なし|設定あり|
-|off|プライマリのWALも非同期で書き込む||
-|local|プライマリのWALは同期書き込み、スタンバイは非同期||
+|**synchronous_commit**|**設定なし**|**設定あり**|
+|off|\2. プライマリのWALも非同期で書き込む||
+|local|\2. プライマリのWALは同期書き込み、スタンバイは非同期||
 |on|プライマリのWALのみ同期書き込み|スタンバイのWALを同期で書き込むのをプライマリは待つ|
