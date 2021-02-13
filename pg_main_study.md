@@ -189,9 +189,32 @@ ${PGDATA}/recovery.conf
 
 ※1 非同期/同期に関連するパラメータ
 
-||\2. synchronous_standby_names||
+||synchronous_standby_names||
 |-|-|-|
 |**synchronous_commit**|**設定なし**|**設定あり**|
-|off|\2. プライマリのWALも非同期で書き込む||
-|local|\2. プライマリのWALは同期書き込み、スタンバイは非同期||
+|off|プライマリのWALも非同期で書き込む||
+|local|プライマリのWALは同期書き込み、スタンバイは非同期||
 |on|プライマリのWALのみ同期書き込み|スタンバイのWALを同期で書き込むのをプライマリは待つ|
+
+<table>
+<td></td><td colspan="2">synchronous_standby_names</td>
+</tr>
+<tr>
+<td>synchronous_commit</td>
+<td>設定なし</td>
+<td>設定あり</td>
+</tr>
+<tr>
+<td>off</td>
+<td colspan="2">プライマリのWALも非同期で書き込む</td>
+</tr>
+<tr>
+<td>local</td>
+<td colspan="2">プライマリのWALは同期書き込み、スタンバイは非同期</td>
+</tr>
+<tr>
+<td>on</td>
+<td>プライマリのWALのみ同期書き込み</td>
+<td>スタンバイのWALを同期で書き込むのをプライマリは待つ</td>
+</tr>
+</table>
