@@ -10,16 +10,16 @@
 #### pg_hba.conf修正
 
 
-* WALログファイルへの書き込みタイミング
+* WALログファイル(物理ファイル)への書き込みタイミング
 
 |内容|備考|
 |-|-|
-|実行中のトランザクションがcommitされたとき|wal buffer※<br>→walファイルへ書き込まれる|
+|実行中のトランザクションがcommitされたとき|wal buffer※1<br>→walファイルへ書き込まれる|
 |WALバッファがあふれたとき||
 |checkpoint、vacuum時||
-|wal writerが作動した時||
-|更新系SQL、検索系SQL(HOTによる不要なタプルの削除と並べ替え発生時)||
-※wal bufferには更新データを保存。データ更新は、共有バッファとWALバッファに対して行われる。
+|wal writerが作動した時|wal_writer_delayで設定<br>デフォルト200ミリ秒|
+|更新系SQL実行時<br>検索系SQL(HOTによる不要なタプルの削除と並べ替え発生時)||
+※1:wal bufferには更新データを保存。データ更新は、共有バッファとWALバッファに対して行われる。
 
 
 * VACUUM処理の流れ  
@@ -125,10 +125,10 @@ ${PGDATA}/postgresql.conf
 |設定|内容|
 |-|-|
 |max_wal_senders=2|1以上|
-|wal_level=replica||
+|wal_level=replica|V9.5以前のarchive、hot_standbyに相当|
 |archive_mode=on|スタンバイDBの数⁺1|
 |max_replication_slots=1|スタンバイDBの数|
-|archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※|WALをアーカイブ領域にコピーするコマンド<br>※設定例|
+|archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※設定例|WALをアーカイブ領域にコピーするコマンド|
 |synchronous_commit=※1|同期レベル|
 |synchronous_standby_names=設定なし|この設定で同期か非同期に分かれる|
 
@@ -141,21 +141,15 @@ ${PGDATA}/recovery.conf
 
 |設定|内容|備考|
 |-|-|-|
-|standby_mode-on||
-|primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※|プライマリへの接続情報<br>※設定例<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
+|standby_mode=on||
+|primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※設定例|プライマリへの接続情報<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
 |primary_slot_name='repl_slot'|マスターのレプリケーションスロット名|
 |recovery_target_timeline=latest||
-|restore_command=’cp /pg_archive/%f %p’ ※|アーカイブをpg_walに戻すコマンド<br>※設定例|
+|restore_command=’cp /pg_archive/%f %p’ ※設定例|アーカイブをpg_walに戻すコマンド|
 
 #### レプリケーション【同期】
 
 ##### master側
-
-${PGDATA}/postgresql.conf  
-
-|設定|内容|備考|
-|-|-|-|
-|hot_standby=on|スレーブで検索系SQLを受け付けるか|
 
 ${PGDATA}/postgresql.conf  
 
@@ -165,7 +159,7 @@ ${PGDATA}/postgresql.conf
 |wal_level=replica|V9.5以前のarchive、hot_standbyに相当|
 |archive_mode=on|スタンバイDBの数⁺1|
 |max_replication_slots=1|スタンバイDBの数|
-|archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※|WALをアーカイブ領域にコピーするコマンド<br>※設定例|
+|archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※設定例|WALをアーカイブ領域にコピーするコマンド|
 |synchronous_commit=※1|同期レベル|
 |synchronous_standby_names='slave1'|同期するスタンバイ名|
 |host_standby_feedback=on|自身の情報をマスターに送信|
@@ -186,12 +180,12 @@ ${PGDATA}/recovery.conf
 |設定|内容|備考|
 |-|-|-|
 |standby_mode=on||
-|primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※|プライマリへの接続情報<br>※設定例<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
+|primary_conninfo='host=マスターのホスト名 port=5432 application_name=任意の名前' ※設定例|プライマリへの接続情報<br>application_nameはpg_stat_activityビューやログファイル上で該当接続を識別可能にする|
 |primary_slot_name='repl_slot'|マスターのレプリケーションスロット名|
 |recovery_target_timeline=latest||
-|restore_command=’cp /pg_archive/%f %p’ ※|アーカイブをpg_walに戻すコマンド<br>※設定例|
+|restore_command=’cp /pg_archive/%f %p’ ※設定例|アーカイブをpg_walに戻すコマンド|
 
-※1 非同期/同期に関連するパラメータ
+※1:非同期/同期に関連するパラメータ
 
 <table>
 <td></td><td colspan="2" align=center><b>synchronous_standby_names</b></td>
