@@ -137,6 +137,12 @@ ${PGDATA}/postgresql.conf
 
 ##### slave側
 
+${PGDATA}/postgresql.conf  
+
+|設定|内容|備考|
+|-|-|-|
+|hot_standby=on|スレーブで検索系SQLを受け付けるか|
+
 ${PGDATA}/recovery.conf  
 
 |設定|内容|備考|
