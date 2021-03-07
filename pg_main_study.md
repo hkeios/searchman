@@ -254,4 +254,5 @@ ${PGDATA}/recovery.conf
 |2|シングルユーザーモード<br>or<br>postgresql.confのignore_system_indexes=on|`# postgres --single -O -P -D $PGDATA`|
 |3|REINDEX実行|`REINDEX index pg_xxxx_index;`<br>Ctrl+Dで終了|
 |4|DB再起動|`$ pg_ctl restart`|
+
 ※インデックス破損は、実際にインデックスを使用する状況にならないと気づかない可能性あり
