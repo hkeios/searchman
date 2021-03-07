@@ -228,3 +228,30 @@ ${PGDATA}/recovery.conf
 ※3:<br>閾値:autovacuum_analyze_threshold(50)＋autovacuum_analyze_scale_factor(0.1)×レコード数<br>
 サンプリング数:default_statistics_target(100)×300行<br>カッコはデフォルト値<br>
 例えば、1000行のテーブルに対しては、(50+0.1×1000)の150回の追加、削除、更新があればサンプリング値に従って、統計情報を取得する。
+
+#### REINDEX
+
+〇:ロックする
+×:ロックなし
+||テーブル書き込み|テーブル読み込み|インデックス読み込み|
+|-|-|-|-|
+|REINDEX|〇|×|〇|
+|CREATE INDEX|〇|×|-|
+|CREATE INDEX|〇|〇|-|
+
+* `REINDEX index index名;`
+→インデックス再構築
+* `REINDEX table table名;`
+→テーブルに貼られた全インデックス再構築
+* `REINDEX database database名;`
+→データベースに存在する全インデックス再構築
+
+##### システムテーブル(pg_xxx)のインデックスの破損対応
+
+|順序|対応|コマンド|
+|-|-|-|
+|1|DB停止|`$ pg_ctl stop`|
+|2|シングルユーザーモード<br>or<br>postgresql.confのignore_system_indexes=on|`# postgres --single -O -P -D $PGDATA`|
+|3|REINDEX実行|`REINDEX index pg_xxxx_index;`<br>Ctrl+Dで終了|
+|4|DB再起動|`$ pg_ctl restart`|
+※インデックス破損は、実際にインデックスを使用する状況にならないと気づかない可能性あり
