@@ -43,6 +43,22 @@
 |pg_switch_xlog()を実行時||
 |アーカイブモード+archive_timeoutを過ぎたとき||
 
+### チェックポイント実施のタイミング
+
+|内容|備考|
+|-|-|
+|checkpoint実行時||
+|checkpoint_timeout間隔||
+|max_wal_sizeに到達時||
+|オンラインBK開始時<br>pg_start_backup<br>pg_stop_backup||
+|インスタンス停止時||
+|インスタンス構成時||
+|pg_ctl stop -m immediateコマンド以外|強制停止(ロールバックされる)|
+|create database、drop database時||
+
+下記にメモリから物理ディスクにデータを反映する起因を示す。
+![データ反映](img/img2.png)
+
 ### VACUUM処理の流れ  
 ・SharedUpdateExecuteLockをかける  
   →VACUUM処理中もテーブルの読書可  
@@ -88,20 +104,6 @@ OS:vacuumdb {DB}
 |SIGUSR1シグナルを受信したとき||
 |pg_log/archive_statusを検索し、.readyファイルを発見<br>archive_commandを実行し、.ready→.doneに変更||
 |WALの切り替え時ではなく、メモリの更新がディスクに反映されて不要になった時||
-
-
-### チェックポイント実施のタイミング
-
-|内容|備考|
-|-|-|
-|checkpoint実行時||
-|checkpoint_timeout間隔||
-|max_wal_sizeに到達時||
-|オンラインBK開始時<br>pg_start_backup<br>pg_stop_backup||
-|インスタンス停止時||
-|インスタンス構成時||
-|pg_ctl stop -m immediateコマンド以外|強制停止(ロールバックされる)|
-|create database、drop database時||
 
 ### FILFACTOR
 ブロックの使用率が指定の値以上になった場合、不要なタプルを削除して有効なタプルを並び替える。  
@@ -215,36 +217,6 @@ ${PGDATA}/recovery.conf
 </tr>
 </table>
 
-
-### 統計情報
-||アクセス統計情報|テーブル(カラム)統計情報|備考|
-|-|-|-|-|
-|用途|autovacuum workerで利用<br>データベースの動作状況を格納|プランナがコスト計算で利用||
-|収集方法|stats_collectorプロセス<br>パ:track_activities=on<br>パ:track_counts=on|ANALYZEコマンド ※1<br>VACUUM ALALYZE ※2<br>vacuumdb -z {テーブル名}<br>vacuumdb -avz<br>パ:autovacuum=on ※3<br>パ:track_counts=on|※1:サンプリングによる。負荷はレコード数に関係なく軽量。<br>※2:全件走査のため制度が高い|
-|収集タイミング|・各サーバから待機直前に送信される<br>・500msに1回反映<br>・track_activitiesにはリアルタイム反映<br>・pg_stat_テーブルにはトランザクション外で参照|プランナがコスト計算で利用|autovacuum実行時、vacuumコマンド実行時|
-|格納テーブル|主要なビュー<br>pg_stat_database<br>pg_stat_activity<br>pg_stat_bgwriter<br>pg_statio_user_tables<br>pg_statio_user_indexes|pg_class(テーブル統計情報)※4<br>pg_statistic(カラム統計情報)※5<br>ともにシステムカタログ|※4:relpages,reltaplesに格納※5:pg_statisticはpg_statsビューで参照|
-
-※3:<br>閾値:autovacuum_analyze_threshold(50)＋autovacuum_analyze_scale_factor(0.1)×レコード数<br>
-サンプリング数:default_statistics_target(100)×300行<br>カッコはデフォルト値<br>
-例えば、1000行のテーブルに対しては、(50+0.1×1000)の150回の追加、削除、更新があればサンプリング値に従って、統計情報を取得する。
-
-### REINDEX
-
-〇:ロックする
-×:ロックなし
-||テーブル書き込み|テーブル読み込み|インデックス読み込み|
-|-|-|-|-|
-|REINDEX|〇|×|〇|
-|CREATE INDEX|〇|×|-|
-|CREATE INDEX|〇|〇|-|
-
-* `REINDEX index index名;`
-→インデックス再構築
-* `REINDEX table table名;`
-→テーブルに貼られた全インデックス再構築
-* `REINDEX database database名;`
-→データベースに存在する全インデックス再構築
-
 # 障害対応
 ### システムテーブル(pg_xxx)のインデックスの破損対応
 
@@ -308,6 +280,38 @@ ${PGDATA}/recovery.conf
 3.チェックポイント後は、最初の更新でブロック全体がWALに書き込まれているので、ブロックをリカバリ  
 4.WALから更新トランザクションの適用  
 5.最新のWALまで更新トランザクションを適用  
+
+# 統計情報
+||アクセス統計情報|テーブル(カラム)統計情報|備考|
+|-|-|-|-|
+|用途|autovacuum workerで利用<br>データベースの動作状況を格納|プランナがコスト計算で利用||
+|収集方法|stats_collectorプロセス<br>パ:track_activities=on<br>パ:track_counts=on|ANALYZEコマンド ※1<br>VACUUM ALALYZE ※2<br>vacuumdb -z {テーブル名}<br>vacuumdb -avz<br>パ:autovacuum=on ※3<br>パ:track_counts=on|※1:サンプリングによる。負荷はレコード数に関係なく軽量。<br>※2:全件走査のため制度が高い|
+|収集タイミング|・各サーバから待機直前に送信される<br>・500msに1回反映<br>・track_activitiesにはリアルタイム反映<br>・pg_stat_テーブルにはトランザクション外で参照|プランナがコスト計算で利用|autovacuum実行時、vacuumコマンド実行時|
+|格納テーブル|主要なビュー<br>pg_stat_database<br>pg_stat_activity<br>pg_stat_bgwriter<br>pg_statio_user_tables<br>pg_statio_user_indexes|pg_class(テーブル統計情報)※4<br>pg_statistic(カラム統計情報)※5<br>ともにシステムカタログ|※4:relpages,reltaplesに格納※5:pg_statisticはpg_statsビューで参照|
+
+※3:<br>閾値:autovacuum_analyze_threshold(50)＋autovacuum_analyze_scale_factor(0.1)×レコード数<br>
+サンプリング数:default_statistics_target(100)×300行<br>カッコはデフォルト値<br>
+例えば、1000行のテーブルに対しては、(50+0.1×1000)の150回の追加、削除、更新があればサンプリング値に従って、統計情報を取得する。  
+
+コストと実際の値が全体に対しての割合と変わらないことに注意する。  
+![img1](img/img1.png)
+
+### REINDEX
+
+〇:ロックする
+×:ロックなし
+||テーブル書き込み|テーブル読み込み|インデックス読み込み|
+|-|-|-|-|
+|REINDEX|〇|×|〇|
+|CREATE INDEX|〇|×|-|
+|CREATE INDEX|〇|〇|-|
+
+* `REINDEX index index名;`
+→インデックス再構築
+* `REINDEX table table名;`
+→テーブルに貼られた全インデックス再構築
+* `REINDEX database database名;`
+→データベースに存在する全インデックス再構築
 
 ### Nested Loop(ネステッドループ結合)
 * 外側テーブル1行ごとに内側テーブルを1周ループしながら結合
