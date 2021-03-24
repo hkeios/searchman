@@ -214,3 +214,46 @@ anacronはcronが1時間に1回実行している。
 /var/log/cronは実行ログは出力するが、実行結果については記録されない  
 停止するには/etc/sysconfig/crondにCRONDARGS="-m off"を追加する
 
+# 鍵認証によるSSH
+```
+サーバAAA：接続先サーバ
+踏み台BBB：接続元サーバ
+
+1.USER1を作成(サーバAAAでの作業)
+# useradd user1
+# ls /home
+
+2.キーペアの作成(サーバAAAでの作業)
+# su - user1
+$ ssh-keygen
+下記2ファイルが作成
+→/home/user1/.ssh/id_rsa.pub(公開鍵)
+→/home/user1/.ssh/id_rsa(秘密鍵)
+
+3.秘密鍵をダウンロードしておく(サーバAAAでの作業)
+メモ帳とかにコピペでもOK
+その後、秘密鍵は削除しておく
+下記1ファイルになる
+→/home/user1.ssh/id_rsa.pub
+
+4.公開鍵の名前を変更する(サーバAAAでの作業)
+$ ls
+id_rsa.pub
+$ mv id_rsa.pub authoroized_keys
+$ ls
+authorized_keys
+
+5.公開鍵のパーミッションを変更(サーバAAAでの作業)
+$ chmod 600 authorized_keys
+
+6.「.ssh」ディレクトリのパーミッションの確認(サーバAAAでの作業)
+$ ls -la
+700であること
+下記1ファイルである
+→/home/user1.ssh/authorized_keys
+
+7.接続確認(踏み台BBBの「任意のユーザ」での作業) 秘密鍵を「任意のユーザ」のホームディレクトリ配下に置いておく
+$ ssh -i id_rsa user1@XXX.XXX.XX.XX
+※id_rsaはサーバAAAのuser1の秘密鍵
+踏み台BBBの任意のユーザからサーバAAAのuser1へSSHログインする
+```
