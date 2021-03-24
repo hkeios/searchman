@@ -1317,6 +1317,37 @@ t_xmax:逆にそのレコードを削除したトランザクションのトラ�
 このように、PostgreSQLのUPDATEの処理では、古いレコードにt_xmaxを設定することで「削除したことにして」、新しいレコードを作成することによって、「更新処理」を行っているように動作する。
 ```
 
+### DROP TABLEするとrelfilenodeも変わる
+```
+testdb3=# drop table pgbench_history;
+DROP TABLE
+$ pg_restore -d testdb3 -t pgbench_history  /tmp/testdb3.dm
+p
+→テーブルのみをリストア
+$ psql -d testdb3
+psql (9.6.2)
+Type "help" for help.
+
+testdb3=# select datname,oid from pg_database;
+  datname  |  oid
+-----------+-------
+ postgres  | 13269
+ testdb    | 16384
+ template1 |     1
+ template0 | 13268
+ dvdrental | 16388
+ testdb2   | 16879
+ testdb3   | 25223
+(7 rows)
+→データベースは削除していないので、OIDは変わらない
+
+testdb3=# select relname,relfilenode from pg_class where relname='pgbench_history';
+     relname     | relfilenode
+-----------------+-------------
+ pgbench_history |       25257
+(1 row)
+→テーブルはノードIDが変更される
+```
 
 # 共有バッファ使用状況の確認
 
@@ -1383,167 +1414,6 @@ t_xmax:逆にそのレコードを削除したトランザクションのトラ�
   deleted_pages      | 0		削除済みページ数
   avg_leaf_density   | 89.83		リーフページの充足率
   leaf_fragmentation | 0		リーフページの断片化率
-```
-
-# シェル
-
-### DBの情報をまとめてとるためのシェル
-```
-  $ pg_db_watch.sh {DB名}
-  =========================
-  #!/bin/sh
-  DBNAME=$1
-  PGHOME=環境に応じて
-  PGPORT=5432
-  PGHOST=localhost
-  PGUSER=XXXXXX
-  PATH=${PGHOME}/bin:${PATH}
-  psql -U ${PGUSER} -A -F, -t -h ${PGHOST} -p ${PGPORT} ${DBNAME} <<EOF
-  SELECT to_char(now(), 'YYYY/MM/DD') as date,to_char(now(), 'HH24:MI:SS') as time,
-  current_database() as dbname,pg_database_size(current_database()) as dbsize,
-  d.numbackends as backends,d.xact_commit as commit,d.xact_rollback as rollback
-  FROM pg_stat_database d WHERE d.datname = current_database()
-  EOF
-  =========================
-
-  $ pg_watch.sh
-  →10分間隔でpg_db_watch.shを呼び、情報を収集してCSVログファイルを出力する。
-  =========================
-  #!/bin/sh
-  PGHOME=環境に応じて
-  PGPORT=5432
-  PGHOST=localhost
-  PGUSER=XXXXXX
-  export PATH=${PGHOME}/bin:${PATH}
-  while [ 1 ]; do
-  cd /tmp;
-  . ./pg_db_watch.sh DB名 | tee -a pg_db_watch.log;
-  psql -c 'SELECT pg_stat_reset()' -U ${PGUSER} -h ${PGHOST} -p ${PGPORT} ${DBNAME}
-  sleep 600;
-  done;
-  =========================
-  ```
-
-
-### 共有バッファ使用状況を確認
-
-1.モジュールの追加
-```
-  pgbench=# create extension pg_buffercache;
-  CREATE EXTENSION
-```
-
-2.シェルの登録と実行
-```
-  =========================
-  #!/bin/sh
-  PGHOME=環境に応じて
-  PGDATA=環境に応じて
-  PATH=${PGHOME}/bin:$PATH
-  export PGHOME PGDATA PATH
-  while [ 1 ]; do
-  psql pgbench -A -t -F, <<EOF
-  select t,total_buf,used_buf,dirty_buf from
-  ( select now()::time as t ) as aa,
-  ( select count(*) AS total_buf from pg_buffercache ) as bb,
-  ( select count(*) AS used_buf from pg_buffercache b where b.relfilenode IS NOT NULL ) as cc,
-  ( select count(*) AS dirty_buf from pg_buffercache b where b.isdirty = true ) as dd
-  EOF
-  fi;
-  sleep 1;
-  done;
-  =========================
-```
-
-3.カラム情報
-
-|カラム名|内容|
-|-|-|
-|bufferid|共有バッファ内の番号|
-|relfilenode|テーブル/インデックスのファイル名|
-|reltablespace|テーブルスペースのOID|
-|reldatabase|データベースのOID|
-|relblocknumber|テーブルファイル上のブロック番号|
-|isdirty|そのバッファページがdirtyかどうか|
-
-### PITRバックアップシェル
-
-```
-・設定
-wal_level = archive
-archive_mode=on
-archive_command='cp %p /var/postgresql/archivedir/%f
-設定例）archive_command = 'test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f'
-※/var/postgresql/archivedir/ アーカイブバックアップ先
-
-・バックアップ取得
-1.シェル作成
-pg_backup.sh
-===========
-#!/bin/sh
-
-psql -c "SELECT pg_start_backup(now()::text)"
-rsync -av --delete --exclude=pg_xlog --exclude=postmaster.pid /data/* /pg_backup
-psql -c "SELECT pg_stop_backup()"
-find /pg_archive/ -mtime +14 -exec rm -f {} \;
-===========
-→/data/*がCLUSTER領域
-→/pg_backup配下にpostmaster.pidと/data/pg_xlogを除いてrsyncで上書きバックアップ
-→アーカイブを保存している/pg_archiveについては、週1回物理バックアップを取得しているので
-14日分残して、消込処理をしている。
-
-2.cron登録
-0 1 * * 0 /var/lib/pgsql/pg_backup.sh
-```
-
-### 不要なアーカイブログの削除
-```
-pg_archivecleanup コマンドによりアーカイブログ・ファイルの削除
-contrib モジュール（9.0～）
-フル・バックアップ以前のアーカイブログのみ削除可能
-pg_basebackup コマンドが完了すると、アーカイブログ用ディレクトリに拡張子 .backup のファイルが作成される
-最新の .backup ファイルを指定することで安全にアーカイブを削除することができる
-=============
-#! /bin/bash
-ARCHDIR=/usr/local/pgsql/arch
-LASTWALPATH=`ls $ARCHDIR/*.backup | sort -r | head -1`
-LASTWALFILE=`basename $LASTWALPATH`
-pg_archivecleanup $ARCHDIR $LASTWALFILE
-exit $?
-=============
-```
-
-
-### DROP TABLEするとrelfilenodeも変わる
-```
-testdb3=# drop table pgbench_history;
-DROP TABLE
-$ pg_restore -d testdb3 -t pgbench_history  /tmp/testdb3.dm
-p
-→テーブルのみをリストア
-$ psql -d testdb3
-psql (9.6.2)
-Type "help" for help.
-
-testdb3=# select datname,oid from pg_database;
-  datname  |  oid
------------+-------
- postgres  | 13269
- testdb    | 16384
- template1 |     1
- template0 | 13268
- dvdrental | 16388
- testdb2   | 16879
- testdb3   | 25223
-(7 rows)
-→データベースは削除していないので、OIDは変わらない
-
-testdb3=# select relname,relfilenode from pg_class where relname='pgbench_history';
-     relname     | relfilenode
------------------+-------------
- pgbench_history |       25257
-(1 row)
-→テーブルはノードIDが変更される
 ```
 
 # 拡張モジュール
