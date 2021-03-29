@@ -499,6 +499,7 @@ pg_stat_all_tablesのn_dead_tupかcontrib/pgstattupleを導入
 ## パラメータとか
 
 |No|内容|パラメータやコマンド|備考|
+|-|-|-|-|
 |1|oidの表示|default_with_oids = on|postgresql.conf|
 |2|AUTOCOMMITの確認|\echo :AUTOCOMMIT|SQLコマンド|
 
@@ -552,7 +553,7 @@ postgres   602     1  0 Jan17 ?        00:00:00 postgres: logger process
 postgres   604     1  0 Jan17 ?        00:00:17 postgres: checkpointer process
 ↓
 別のセッションでの接続不可確認
-[postgres@koma_asb ~]$ psql -l
+$ psql -l
 psql: could not connect to server: Connection refused
         Is the server running locally and accepting
         connections on Unix domain socket "/tmp/.s.PGSQL.5432"?
@@ -1606,7 +1607,7 @@ testdb=# select oid, * from pg_namespace;
 ## DBのコピー
 マスタのデータをスレーブへコピー
 ※192.168.1.11はマスター
-以下のコマンドはスレーブにログインして、マスターのdb1をdb2へコピーしている
+以下のコマンドはスレーブにログインして、マスターのdb1をdb2へコ�����ーしている
 ```
 pg_dump -h 192.168.1.11 db1 | psql db2
 ```
@@ -1835,40 +1836,7 @@ testdb=# SELECT pg_stat_statements_reset();
 ## インデックスとテーブル
 インデックスとテーブルのレコードは、ctidという「ポインタ」を介してつながっている
 
-## dockerでPostgres導入
-```
-①postgresqlを起動
-$docker run -d --name {コンテナ名} -e POSTGRES_PASSWORD={スーパユーザのパスワード} -p {コンテナへフォワードするホストのポート:フォワード先のコンテナのポート} postgres{:バージョン(指定しなければ最新)}
 
-→$docker run -d --rm --name postgres -e POSTGRES_PASSWORD=postgres00 -e POSTGRES_INITDB_ARGS="--encoding=UTF-8 --locale=C" -p 5432:5432 -v ~/data:/var/lib/postgresql/data postgres
-※rmを付与しているので、停止時にコンテナ削除
-
-②起動確認
-$docker container ls
-
-③コンテナへログイン
-$docker exec -ti postgres bash
-
-④データベースへログイン
-psql -U postgres -d template1
-
-※"docker run"で起動したプロセスは、"docker kill"で停止でき、"docker rm"で削除できるということ
-※永続化コマンドをするには、下記のコマンドを実行する。
-$ docker run -p 5432:5432 -d -it --name pg -e POSTGRES_PASSWORD=パスワード -v ~/data:/var/lib/postgresql/data postgres
-
-※~/dataは、ホームディレクトリの直下にdataディレクトリを予め作成する。
-/var/lib/postgresql/dataの部分は、PostgreSQLのデフォルトのデータの保存場所になる。
-
-※ファイルの編集
-まずはホスト側にコンテナ内のファイルをコピーする。
-
-docker container cp コンテナ名:/usr/local/etc/php/php.ini /home/user/test
-ホスト側編集が終われば、今度は、ホスト側からコンテナにコピーする。
-
-docker container cp /home/user/test/php.ini コンテナ名:/usr/local/etc/php/php.ini
-後は、コンテナを再起動すれば適応される。
-
-docker restart コンテナ名
 ```
 
 
