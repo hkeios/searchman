@@ -1504,12 +1504,12 @@ select * from pg_available_extensions;
 # お役立ち、サンプルDB作成等
 
 ## DB作成
-1.DBクラスタ作成
-2.ユーザ作成
-3.テーブルスペース作成
-4.データベース作成
-5.CREATE権限作成
-6.アクセス権付与
+1.DBクラスタ作成  
+2.ユーザ作成  
+3.テーブルスペース作成  
+4.データベース作成  
+5.CREATE権限作成  
+6.アクセス権付与  
 
 ## 連番を生成する
 ```
@@ -1607,7 +1607,9 @@ testdb=# select oid, * from pg_namespace;
 マスタのデータをスレーブへコピー
 ※192.168.1.11はマスター
 以下のコマンドはスレーブにログインして、マスターのdb1をdb2へコピーしている
-`pg_dump -h 192.168.1.11 db1 | psql db2`
+```
+pg_dump -h 192.168.1.11 db1 | psql db2
+```
 
 # 設計での注意点
 
@@ -1625,7 +1627,6 @@ testdb=# select oid, * from pg_namespace;
 * 書き込み時にインデックスの再構築を行うため、インデックスが多すぎると書き込み性能が下がる。
 * やみくもに付けると利用されないケースが多い。
 →`select * from pg_stat_all_indexes;`の「idx_scan」を確認
-https://www.slideshare.net/InsightTechnology/dbts-osaka-2014-b23-postgresql-tomonari-katsumata
 
 ## テーブルのレコード数の考慮
 * どのような処理でレコードが追加されるのかを検討する。
@@ -1662,7 +1663,7 @@ https://www.slideshare.net/InsightTechnology/dbts-osaka-2014-b23-postgresql-tomo
 ## レンジパーティション
 
 パーティションキーの値を期間や範囲などで分割する方法
-下記に例を記載する。この場合、0~200、201~400という範囲で分割している。
+下記に例を記載する。この場合、0\~200、201\~400という範囲で分割している。
 
 1. ユーザIDをパーティションキーにして親テーブルを作成
 ```
