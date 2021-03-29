@@ -22,8 +22,6 @@
 |5|C:\WINDOWS\System32\vmcompute.exeを選んで編集|
 |6|制御フローガード(CFG)のシステム設定の上書きのチェックを外して適用|
 
-
-
 # dockerとdocker composeのセットアップ
 
 手順は下記のとおりである。  
@@ -257,3 +255,82 @@ $ ssh -i id_rsa user1@XXX.XXX.XX.XX
 ※id_rsaはサーバAAAのuser1の秘密鍵
 踏み台BBBの任意のユーザからサーバAAAのuser1へSSHログインする
 ```
+
+# dockerとdocker composeのセットアップ
+```
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh ./get-docker.sh
+systemctl enable dockern
+systemctl start docker
+yum -y install docker-compose
+```
+
+# Dockerにzabbixを立てる
+```
+# mkdir docker
+# cd docker/
+# git clone https://github.com/zabbix/zabbix-docker.git
+# cd zabbix-docker/
+# cp -p docker-compose_v3_centos_pgsql_latest.yaml docker-compose.yaml
+あるいは
+# cp docker-compose_v3_centos_mysql_latest.yaml docker-compose.yaml
+# docker-compose pull
+# docker images
+# docker-compose up -d
+Username： Admin
+Password： zabbix
+```
+※YAML ファイル中、MySQL のユーザやパスワードの設定ファイルは .MYSQL_USER 、 .MYSQL_PASSWORD 、 .MYSQL_ROOT_PASSWORD 。必要に応じて編集。  
+ログイン直後は、Zabbix Server が「利用不可」の障害となっている。デフォルトのままでは、Zabbix Server の状態を Zabbix agent経由で取得できないため、以下の手順で設定を変更する。  
+監視先を 127.0.0.1 から zabbix-agent に変更。
+
+```
+① docker上にmysqlコンテナを立てる
+# docker run --name mysql-server -t -e MYSQL_DATABASE="zabbix" -e MYSQL_USER="zabbix" -e MYSQL_PASSWORD="password" -e MYSQL_ROOT_PASSWORD="password" -d mysql:5.7 --character-set-server=utf8 --collation-server=utf8_bin
+
+② docker上にjava-gatewayコンテナを立てる
+# docker run --name zabbix-java-gateway -t -d zabbix/zabbix-java-gateway:latest
+
+③ zabbix-server-mysqlコンテナを立てる
+# docker run --name zabbix-server-mysql -t \
+-e DB_SERVER_HOST="mysql-server" \
+-e MYSQL_DATABASE="zabbix" \
+-e MYSQL_USER="zabbix" \
+-e MYSQL_PASSWORD="password" \
+-e MYSQL_ROOT_PASSWORD="password" \
+-e ZBX_JAVAGATEWAY="zabbix-java-gateway" \
+--link mysql-server:mysql \
+--link zabbix-java-gateway:zabbix-java-gateway \
+-p 10051:10051 \
+-d zabbix/zabbix-server-mysql:latest
+
+④ zabbix-web-nginx-mysqlコンテナを立てる
+# docker run --name zabbix-web-nginx-mysql -t \
+-e DB_SERVER_HOST="mysql-server" \
+-e MYSQL_DATABASE="zabbix" \
+-e MYSQL_USER="zabbix" \
+-e MYSQL_PASSWORD="passowrd" \
+-e MYSQL_ROOT_PASSWORD="password" \
+--link mysql-server:mysql \
+--link zabbix-server-mysql:zabbix-server \
+-p 80:80 \
+-d zabbix/zabbix-web-nginx-mysql:latest
+```
+
+# Windows docker環境の構築
+
+①Hyper-VとContainerの有効化  
+1.Windowsメニューからコントロールパネルを開いて、「プログラム」を選択  
+2.「Windowsの機能の有効化または無効化」を選択  
+3.「Hyper-V」と「Container」にチェックを入れて「OK」  
+<br>
+②BIOSでVirtualization Technologyを有効化  
+Intel Virtualization Technologyを「Enabled」に変更  
+<br>
+③エラー回避  
+1.Windowsセキュリティを起動  
+2.アプリとブラウザのコントロールをクリック  
+3.一番下にあるExploit protectionの設定をクリック  
+4.プログラム設定のタブを選択  
+5.C:\WINDOWS\System32\vmcompute.exeを選んで編集  
+6.制御フローガード(CFG)のシステム設定の上書きのチェックを外して適用  
