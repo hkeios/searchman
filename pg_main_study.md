@@ -9,6 +9,8 @@
 #### postgresql.conf修正
 #### pg_hba.conf修正
 
+# WAL
+
 ### WALログについて
  * トランザクション処理において、常に追記されるだけで読み込みはほとんど行われない。
  * テーブルファイルやインデックスファイルはデータを読み書きするため、ランダムに読み書きされるファイルであり、サイズも大きくなる。
@@ -47,6 +49,8 @@
 |pg_switch_xlog()を実行時||
 |アーカイブモード+archive_timeoutを過ぎたとき||
 
+# チェックポイント(checkpoint)
+
 ### チェックポイント実施のタイミング
 
 |内容|備考|
@@ -62,6 +66,8 @@
 
 下記にメモリから物理ディスクにデータを反映する起因を示す。
 ![データ反映](img/img2.png)
+
+# VACUUM(メンテナンス)
 
 ### VACUUMの特徴
 * 初回のVACUUMはテーブルのフルスキャンを行いVisibility Mapを作成する
@@ -106,8 +112,7 @@ OS:vacuumdb {DB}
 |4|WALから更新トランザクションを適用||
 |5|最新のWALまで更新トランザクションを適用||
 
-
-### アーカイブ処理のタイミング
+# アーカイブ処理のタイミング
 
 |内容|備考|
 |-|-|
@@ -116,7 +121,7 @@ OS:vacuumdb {DB}
 |pg_log/archive_statusを検索し、.readyファイルを発見<br>archive_commandを実行し、.ready→.doneに変更||
 |WALの切り替え時ではなく、メモリの更新がディスクに反映されて不要になった時||
 
-### FILFACTOR
+# FILFACTOR
  * ブロックの使用率が指定の値以上になった場合、不要なタプルを削除して有効なタプルを並び替える。  
  * 空き領域を確保しておくことで、データがブロックにまたがることを防ぐ。
  * ブロックの使用率が指定した値以上になった場合、不要なタプルを削除して有効なタプルを並び替える
@@ -126,13 +131,13 @@ OS:vacuumdb {DB}
  * create tableの際に、with句で設定する
  * 確認するにはpg_classカタログのreloptions列を参照
  
-### Index Only Scan
+# Index Only Scan
 * Index-Only-ScanはVisibility Mapのビットが立って入れば、テーブルは見ない。
 * selectの検索がインデックスのKeyのみの場合、テーブルへのアクセスを省略する。
 * VisibilityMapを見て、可視のブロックはIndexOnlyScan、それ以外はテーブルまでアクセスを実施する。
 * 更新が少なく、ほとんどの操作が検索であるテーブルに対し、広範囲で検索を行う場合にテーブルへのアクセスがないため有効
 
-### HOTとは
+# HOT
  * 同一ブロックに更新データを追記する際、インデックスを追加しない(古いインデックスにリンクを貼って再利用)
     * インデックス更新のコストが抑えられる
  * ガーベージの自動回収(VACUUMいらず)
@@ -142,7 +147,7 @@ OS:vacuumdb {DB}
     * ラインポインタのリダイレクトによりインデックス更新のスキップを実現している
     * 同じページに新規レコードを配置する空きがない場合は、HOTの「不要なインデックスをスキップする」機能が働かないよ
 
-### 排他ロックの特徴
+# 排他ロックの特徴
 排他ロック(Access Exclusive Lock)は 業務処理を停めてしまうので要注意
 
 * VACUUM FULL/CLUSTER
@@ -166,10 +171,12 @@ OS:vacuumdb {DB}
 テーブルを異なるテーブルスペースに移動
 テーブルの再作成
 
-### レプリケーションスロット
+# レプリケーション
+
+## レプリケーションスロット
 masterがslaveに必要なWALを判別して、自動削除しないように操作する仕組み。レプリケーション方法と合わせて、下記に設定を示す。  
 
-### レプリケーション【非同期】
+## レプリケーション【非同期】
 
 <span style="font-size: 100%; color: blue;"><b>master側</b></span>
 
@@ -186,7 +193,9 @@ ${PGDATA}/postgresql.conf
 |synchronous_standby_names=設定なし|この設定で同期か非同期に分かれる|
 
 * レプリケーションスロット設定
-`select * from pg_create_physical_replication_slot('repl_slot')`
+```
+select * from pg_create_physical_replication_slot('repl_slot')
+```
 
 <span style="font-size: 100%; color: green;"><b>slave側</b></span>
 
@@ -206,7 +215,7 @@ ${PGDATA}/recovery.conf
 |recovery_target_timeline=latest||
 |restore_command=’cp /pg_archive/%f %p’ ※設定例|アーカイブをpg_walに戻すコマンド|
 
-### レプリケーション【同期】
+## レプリケーション【同期】
 
 <span style="font-size: 100%; color: blue;"><b>master側</b></span>
 
@@ -224,7 +233,9 @@ ${PGDATA}/postgresql.conf
 |host_standby_feedback=on|自身の情報をマスターに送信|
 
 * レプリケーションスロット設定
-`select * from pg_create_physical_replication_slot('repl_slot')`
+```
+select * from pg_create_physical_replication_slot('repl_slot')
+```
 
 <span style="font-size: 100%; color: green;"><b>slave側</b></span>
 
@@ -270,7 +281,7 @@ ${PGDATA}/recovery.conf
 </table>
 
 # 障害対応
-### システムテーブル(pg_xxx)のインデックスの破損対応
+## システムテーブル(pg_xxx)のインデックスの破損対応
 
 |順序|対応|コマンド|
 |-|-|-|
@@ -281,52 +292,52 @@ ${PGDATA}/recovery.conf
 
 ※インデックス破損は、実際にインデックスを使用する状況にならないと気づかない可能性あり
 
-### pg_controlを削除
+## pg_controlを削除
 |影響|対応|備考|
 |-|-|-|
 |データベース起動不可|バックアップから戻す|`pg_resetlog -x`でWALを再作成する必要あり|
 
-### インスタンス異常終了後、最新のWALを削除
+## インスタンス異常終了後、最新のWALを削除
 |影響|対応|備考|
 |-|-|-|
 |インスタンスは起動<br>クラッシュリカバリが途中までしか進まない|||
 
-### インスタンス正常終了後、データファイルを削除
+## インスタンス正常終了後、データファイルを削除
 |影響|対応|備考|
 |-|-|-|
 |インスタンスは起動<br>テーブルへのselectはエラー|バックアップから戻す||
 
-### VM/FSMを削除
+## VM/FSMを削除
 |影響|対応|備考|
 |-|-|-|
 |エラーなし<br>SQLも異常なし|次回vacuum時に再作成される||
 
-### global/pg_filenode.mapを削除
+## global/pg_filenode.mapを削除
 |影響|対応|備考|
 |-|-|-|
 |システムカタログと実ファイルのマッピングが不可になるためデータベース利用不可|バックアップから戻す||
 
-### WALファイル全削除
+## WALファイル全削除
 |影響|対応|備考|
 |-|-|-|
 |データベース起動不可|`pg_resetlog -f`で強制的にWALを再作成||
 
-### PG_VERSION削除
+## PG_VERSION削除
 |影響|対応|備考|
 |-|-|-|
 |ディレクトリがPostgreSQLと認識できなくなる|バックアップから戻す||
 
-### インスタンス起動中にpg_control削除
+## インスタンス起動中にpg_control削除
 |影響|対応|備考|
 |-|-|-|
 |チェックポイント時にパニックし、インスタンス停止|バックアップから戻す||
 
-### インスタンス起動中にWAL削除
+## インスタンス起動中にWAL削除
 |影響|対応|備考|
 |-|-|-|
 |自動的に再作成<br>自動再作成不可の時、PANICを起こし、インスタンス停止|`pg_resetlog -f`で強制的にWALを再作成||
 
-### クラッシュリカバリの流れ
+## クラッシュリカバリの流れ
 1.チェックポイント位置をpg_controlから確認  
 2.WALから前回チェックポイント後に発生したトランザクション情報を読み込み  
 3.チェックポイント後は、最初の更新でブロック全体がWALに書き込まれているので、ブロックをリカバリ  
@@ -348,7 +359,7 @@ ${PGDATA}/recovery.conf
 コストと実際の値が全体に対しての割合と変わらないことに注意する。  
 ![img1](img/img1.png)
 
-### REINDEX
+## REINDEX
 
 〇:ロックする
 ×:ロックなし
@@ -365,20 +376,20 @@ ${PGDATA}/recovery.conf
 * `REINDEX database database名;`
 →データベースに存在する全インデックス再構築
 
-### Nested Loop(ネステッドループ結合)
+## Nested Loop(ネステッドループ結合)
 * 外側テーブル1行ごとに内側テーブルを1周ループしながら結合
 * 外側テーブルの行数が少なく、内側テーブルにインデックスがある場合に処理が高速
 
 ※内側テーブル：参照されるテーブル
 ※外側テーブル：参照するテーブル
 
-### Merge Join(マージ結合)
+## Merge Join(マージ結合)
 * 結合キーで外/内テーブルをソート
 * 順に突合せ
 * 大きなテーブル同士で有効
 * 結合キーが主キーだと処理が高速
 
-### Hash Join(ハッシュ結合)
+## Hash Join(ハッシュ結合)
 * 内側テーブルの結合キーでハッシュを作成
 * ハッシュと外側テーブル(上から1行ずつ)を突合せ
 * ハッシュはメモリーに作成
@@ -386,7 +397,7 @@ ${PGDATA}/recovery.conf
 * 小さなテーブル(内側テーブル)と大きなテーブルを結合する場合に有効
 
 # 運用操作
-### vmstatを利用して確認すべきポイント
+## vmstatを利用して確認すべきポイント
 
 |NO|確認ポイント|内容|
 |-|-|-|
@@ -394,7 +405,7 @@ ${PGDATA}/recovery.conf
 |2|CPUのチェック|**user使用率が高い**(postgresqlの内部処理の可能性大)<br>→同時接続チェック<br>→SQLの見直し<br>**waitが高い**(ディスクI/O処理がボトルネック)<br>→I/O待ちで待機している状態(CPU割り当てを待っている状態)<br>→割り当てられたCPUでディスクへの読み書きを行う|
 |3|rとbのチェック|**r:実行待ちプロセス数の値が高い**<br>→userのCPU使用率が高い<br>**b:I/O wait状態のプロセス数値が高い**<br>→waitのCPU使用率が高い<br><b>rとbの合計がCPU以上</b><br>→負荷が高い<br>**waitが高く、bが高い**<br>→biとboをチェック。どちらかがボトルネック。|
 
-### メモリ使用量
+## メモリ使用量
 
 ps alxというコマンドによりおおよそのメモリ使用量を確認できる。  
 例えばPostgreSQLのメモリ使用量を調べたい場合は  
@@ -408,14 +419,14 @@ F   UID   PID  PPID PRI  NI   VSZ  RSS WCHAN  STAT TTY        TIME COMMAND
 ```
 ここで RSS と表示されているのがメモリーの使用量になる。単位はkB。
 
-### pg_benchツール導入
+## pg_benchツール導入
 
 |NO|内容|コマンド|
 |-|-|-|
 |1|初期化|`pgbench -i {DB名}`<br>"-s 10"をつけると10万件となる<br>デフォルトでは1万件|
 |2|実行|`pgbench -c 10 -t 10 {DB名}`<br>c:接続数<br>t:1クライアントあたりのトランザクション数|
 
-### 第二正規形
+## 第二正規形
 
 部分関数従属をなくす
 
@@ -435,7 +446,7 @@ F   UID   PID  PPID PRI  NI   VSZ  RSS WCHAN  STAT TTY        TIME COMMAND
 |`商品ID`|商品名|価格|
 |-|-|-|
 
-### 第三正規形
+## 第三正規形
 
 推移関数従属をなくす
 
@@ -452,12 +463,12 @@ F   UID   PID  PPID PRI  NI   VSZ  RSS WCHAN  STAT TTY        TIME COMMAND
 |`店舗ID`|店舗名|
 |-|-|
 
-###タプル
-##### データタプルの追記
+#タプル
+## データタプルの追記
 データを追記する場合、次々と新しいブロックに書き込むことはしない。
 空き領域のあるブロックに追記する。そのため、空き領域を効率的に探すためFSMの情報が必要となる。
 
-##### タプル内の情報
+## タプル内の情報
 ブロック構造の先頭には下記のような情報が登録(一部のみ抜粋)
 XLogRecPtr:最も最近のチェックポイントレコードを指すポインタ
 pd_lower:空き領域の始まりに対するオフセット
@@ -470,10 +481,10 @@ t_cid:このトランザクション内で何番目の追記か
 t_ctid:追記された新しいタプルへのポインタ。追記したt_xminへのポインタ
 ～ユーザデータ
 
-##### 不要タプルの確認
+## 不要タプルの確認
 pg_stat_all_tablesのn_dead_tupかcontrib/pgstattupleを導入
 
-### 一般ユーザによるデータベース作成
+## 一般ユーザによるデータベース作成
 
 一般ユーザにはデータベースを作成する権限がない。
 よって、一般ユーザにデータベースを作成する権限を付与する必要がある。
@@ -485,8 +496,7 @@ pg_stat_all_tablesのn_dead_tupかcontrib/pgstattupleを導入
 |3|スーパーユーザ(postgres)で一般ユーザ(testuser)に権限を付与|`template1=# alter role testuser createdb;`||
 |4|一般ユーザ(testuser)でデータベースを作成|`$ psql -U testuser -d template1<br>template1=> create database testdb;`|一般ユーザでデータベース作成が可能となる|
 
-
-### パラメータとか
+## パラメータとか
 
 |No|内容|パラメータやコマンド|備考|
 |1|oidの表示|default_with_oids = on|postgresql.conf|
@@ -494,7 +504,7 @@ pg_stat_all_tablesのn_dead_tupかcontrib/pgstattupleを導入
 
 # 検証
 
-### PITR検証1
+## PITR検証1
 ```
 バックアップ前
 testdb3=# select count(*) from pgbench_history ;
@@ -598,7 +608,7 @@ testdb3=# select * from pgbench_history limit 10 offset 300;
 (10 rows)
 ```
 
-### PITR検証2
+## PITR検証2
 ```
 1.データの確認
 testdb3=# select count(*) from pgbench_history;
@@ -693,8 +703,8 @@ PITRを実行するたびにtimelineが増えていく
 timelineを利用すれば異なる以前の歴史にさかのぼってPITRを実行することが可能。
 ```
 
-### PGDUMPリストア検証
-#### pg_dumpによるバックアップとリストア
+## PGDUMPリストア検証
+### pg_dumpによるバックアップとリストア
  * スクリプト形式（デフォルト）でのバックアップ ※中身見れるよ
 ```
   $ pg_dump DB名 > DB_バックアップ名
@@ -724,7 +734,7 @@ timelineを利用すれば異なる以前の歴史にさかのぼってPITRを�
 ```
 
 
-#### DBバックアップ＞テーブル単位でのリストア検証
+### DBバックアップ＞テーブル単位でのリストア検証
 ```
 pgbench -U testuser -i -s 1 testdb3
 pgbench -c 10 -t 10000 testdb3
@@ -778,7 +788,7 @@ testdb3=# select count(*) from pgbench_history;
 (1 row)
 ```
 
-#### テーブル単位のバックアップ＞テーブル単位でのリストア検証
+### テーブル単位のバックアップ＞テーブル単位でのリストア検証
 
 ```
 1.テーブル単位のバックアップ
@@ -815,7 +825,7 @@ testdb3=# \d
  public | pgbench_tellers  | table | testuser
 (5 rows)
 ```
-#### テキスト形式のリストア
+### テキスト形式のリストア
 ```
 1.バックアップ実施
 $ pg_dump testdb3 > /tmp/testdb3.dmp
@@ -852,7 +862,7 @@ testdb3=# select count(*) from pgbench_history ;
 (1 row)
 ```
 
-#### カスタム形式でダンプし、レコードだけ戻す
+### カスタム形式でダンプし、レコードだけ戻す
 ```
 1.テーブル単位のバックアップ
 $ pg_dump -Fc testdb3 > /tmp/testdb3.dmp
@@ -924,7 +934,7 @@ testdb3=# select count(*) from pgbench_history;
 →テーブルのrelfilenodeも一緒なので、データのみリストアされたことがわかる
 ```
 
-### ロングトランザクション
+## ロングトランザクション
 ```
 ロングトランザクションはHOTだけでなくVACUUMも阻害する。
 長期間実施されているロングトランザクションはpg_stat_activityビューで確認が可能である。
@@ -953,7 +963,7 @@ testdb3=# select count(*) from pgbench_history;
 ・巨大なテーブルへのANALYZE処理
 ```
 
-### インデックスへどれだけアクセスしたか
+## インデックスへどれだけアクセスしたか
 ```
 testdb=# SELECT indexrelname, idx_scan, idx_tup_read, idx_tup_fetch
 testdb-# FROM pg_stat_user_indexes WHERE relname = 'testtbl';
@@ -986,7 +996,7 @@ FILLFACTORはテーブル毎に設定するパラメータで、以下の用に�
 そのため、INSERT、SELECT処理がメインとなるテーブルについては、キャッシュヒット率を重視する意味で、FILLFACTORは指定せず、デフォルトである 100% の設定を使うほうが良い。
 ```
 
-### HOT(ガベージの回収)検証
+## HOT(ガベージの回収)検証
 
 ```
 ガベージの回収について確認する。pg_stat_user_tablesの情報を監視する方法。
@@ -1081,7 +1091,7 @@ n_tup_hot_updがカウントアップされているため、ちゃんとHOT更�
 定期的にこれらの情報を監視することで、ガベージが順調に回収されているかどうかを確認できる
 ```
 
-### スキーマ検証
+## スキーマ検証
 
 スキーマとはデータを格納する場所
 
@@ -1299,7 +1309,7 @@ testdb=> select * from public.triptype;
 おしまい。
 ```
 
-###### レコードを更新して、ブロックの内部がどのように変化するか
+## レコードを更新して、ブロックの内部がどのように変化するか
 ```
 testdb=# create extension pageinspect;
 testdb=# UPDATE t1 SET uname = 'update 1' WHERE uid = 101;
@@ -1317,7 +1327,7 @@ t_xmax:逆にそのレコードを削除したトランザクションのトラ�
 このように、PostgreSQLのUPDATEの処理では、古いレコードにt_xmaxを設定することで「削除したことにして」、新しいレコードを作成することによって、「更新処理」を行っているように動作する。
 ```
 
-### DROP TABLEするとrelfilenodeも変わる
+## DROP TABLEするとrelfilenodeも変わる
 ```
 testdb3=# drop table pgbench_history;
 DROP TABLE
@@ -1349,7 +1359,7 @@ testdb3=# select relname,relfilenode from pg_class where relname='pgbench_histor
 →テーブルはノードIDが変更される
 ```
 
-# 共有バッファ使用状況の確認
+## 共有バッファ使用状況の確認
 
 ### pgstattupleの導入(v9.1以降)
 ```
@@ -1416,8 +1426,62 @@ testdb3=# select relname,relfilenode from pg_class where relname='pgbench_histor
   leaf_fragmentation | 0		リーフページの断片化率
 ```
 
+## 共有バッファ内の各ブロックがデータベース内のどのテーブル内の何番目のブロックであるか
+```
+1.pg_buffercacheのインストール
+$ psql -d testdb
+testdb=# create extension pg_buffercache;
+CREATE EXTENSION
+
+2.共有バッファの中身を確認
+testdb=# SELECT count(*) FROM pg_buffercache;
+ count
+-------
+ 32768
+(1 row)
+⇒共有バッファが32768ページ（8kB×32768ページ＝262MB）ある。
+
+testdb=# SELECT * FROM pg_buffercache LIMIT 5; ←5行
+ bufferid | relfilenode | reltablespace | reldatabase | relforknumber | relblocknumber | isdirty | usagecount
+----------+-------------+---------------+-------------+---------------+----------------+---------+------------
+        1 |       12784 |          1664 |           0 |             0 |              0 | f       |          5
+        2 |       12554 |          1663 |       16388 |             0 |              0 | f       |          5
+        3 |       12554 |          1663 |       16388 |             0 |              1 | f       |          5
+        4 |       12554 |          1663 |       16388 |             0 |              2 | f       |          5
+        5 |       12554 |          1663 |       16388 |             0 |              3 | f       |          5
+(5 rows)
+
+・bufferid:バッファ内のページ番号(連番)
+・relfilenode:各テーブルやインデックスの該当するファイル名
+・reltablespace:テーブルスペースのOID
+・reldatabase:該当するデータベースのOID
+・relforknumber:フォーク番号：テーブルやインデックスのデータファイル本体なら0、
+・FreeSpaceMap:FSMなら1、VisibilityMapなら2
+・relblocknumber:該当ファイルの中でのブロック番号
+・isdirty:ページが更新されているかどうか
+・usagecount:当該ページが参照された回数：最小0、上限5
+
+3.ダーティーページの確認
+ダーティページというのは、バッファページのうち更新されているものを指す。共有バッファ内で更新されているため、
+後にチェックポイントやバックグラウンドライタなどによってテーブルやインデックスなどのファイルに書き戻す必要のあるブロック。
+ダーティページは後刻ディスクに書き戻す必要のあるページであり、ダーティページが増加すると結果として
+ディスクの書き込みが多くなりため、パフォーマンスに影響を与える。
+
+testdb=# SELECT isdirty,count(*) FROM pg_buffercache GROUP BY isdirty;
+ isdirty | count
+---------+-------
+         | 32399
+ t       |    31←更新されていないページが31ページある。
+ f       |   338←更新されていないページが338ページある。
+
+```
+
 # 拡張モジュール
 
+## 拡張モジュールの導入確認
+```
+select * from pg_available_extensions;
+```
 モジュールを入れておいて、必要な時にON/OFFするとよい。
 
 1.pg_stat_statements
@@ -1439,7 +1503,7 @@ testdb3=# select relname,relfilenode from pg_class where relname='pgbench_histor
 
 # お役立ち、サンプルDB作成等
 
-### DB作成
+## DB作成
 1.DBクラスタ作成
 2.ユーザ作成
 3.テーブルスペース作成
@@ -1447,37 +1511,37 @@ testdb3=# select relname,relfilenode from pg_class where relname='pgbench_histor
 5.CREATE権限作成
 6.アクセス権付与
 
-### 連番を生成する
+## 連番を生成する
 ```
 SELECT generate_series(1,1000);
 SELECT generate_series(1,1000,2);
 ```
 
-### ランダムな数値を生成する
+## ランダムな数値を生成する
 ```
 SELECT random();
 →0から99までのランダム数値を得る
 SELECT (random() * 10000)::int % 100;
 ```
 
-### 日付/タイムスタンプデータを生成する
+## 日付/タイムスタンプデータを生成する
 ```
 SELECT CURRENT_TIMESTAMP - interval '1 week 2 day';
 →特定の日付開始から終了まで、1日デクリメントしたものを5日分
 SELECT generate_series('2013-12-31','2013-12-25', -'1 day'::interval)::date LIMIT 5;
 ```
 
-### ランダムな文字列を生成する
+## ランダムな文字列を生成する
 ```
 SELECT md5(clock_timestamp()::text) FROM generate_series(1,3);
 ```
 
-### ログ取得
+## ログ取得
 ```
 > ￥o ファイル名
 ```
 
-### PostgreSQL select文結果 CSV ファイル出力
+## PostgreSQL select文結果 CSV ファイル出力
 -A 桁そろえをしない  
 -F セパレータを指定  
 -t 列名と結果の行数フッタなどの表示を無効にします  
@@ -1491,17 +1555,17 @@ select を CSV で出力 (バッチモード)
 $ psql -F ',' -A -t -c 'select * from table'
 ```
 
-### 接続数の確認
+## 接続数の確認
 ```
 select pid || ' (' || usename || ' using ' || datname || ')' from pg_stat_activity order by pid,usename,datname;
 SELECT datname, usename, COUNT(*) FROM pg_stat_activity GROUP BY datname, usename;
 ```
 
-### swapの回避
+## swapの回避
 swapを避けるためには、以下の式を目安に設定
 shared_buffers + (max_connections * (2MB + work_mem) ) + (OSや他プログラム用メモリ) < 実メモリ
 
-### shared_buffersの値
+## shared_buffersの値
 shared_buffers >= max_connections × 2でなければ遅延が発生する
 shared_buffers パラメータは、PostgreSQL データベース サーバで共有メモリ バッファに使用されるメモリの量を指定します。
 デフォルトは 32MB ですが、UNIX カーネル設定でサポートされない場合には 32MB より小さい場合があります。
@@ -1510,22 +1574,22 @@ PostgreSQL のドキュメントでは、適切なパフォーマンスを得る
 運用環境のインストールでは、数十 MB に設定することが推奨されます。
 このパラメータを変更した場合は、データベース クラスタを再起動する必要があります。
 
-### キャッシュヒット率の確認
+## キャッシュヒット率の確認
 ```
 template1=# SELECT datname,round(blks_hit*100/(blks_hit+blks_read), 2) AS cache_hit_ratio FROM pg_stat_database WHERE blks_read > 0;
 ```
 
-### トングトランザクションの処理と経過時間の確認
+## トングトランザクションの処理と経過時間の確認
 ```
 SELECT procpid, waiting, (current_timestamp - xact_start)::interval(3) AS duration, current_query FROM pg_stat_activity WHERE procpid <> pg_backend_pid();
 ```
 
-### ロック待ちとなっている処理内容と対象のテーブルを確認
+## ロック待ちとなっている処理内容と対象のテーブルを確認
 ```
 SELECT l.locktype, c.relname, l.pid, l.mode, substring(a.current_query, 1, 6) AS query, (current_timestamp - xact_start)::interval(3) AS duration FROM pg_locks l LEFT OUTER JOIN pg_stat_activity a ON l.pid = a. procpid LEFT OUTER JOIN pg_class c ON l.relation = c.oid WHERE NOT l.granted ORDER BY l.pid;
 ```
 
-### スキーマ一覧の表示
+## スキーマ一覧の表示
 ```
 testdb=\dn
 testdb=# select oid, * from pg_namespace;
@@ -1539,12 +1603,272 @@ testdb=# select oid, * from pg_namespace;
  13002 | information_schema |       10 | {postgres=UC/postgres,=U/postgres}
 ```
 
-### DBのコピー
+## DBのコピー
 マスタのデータをスレーブへコピー
 ※192.168.1.11はマスター
 以下のコマンドはスレーブにログインして、マスターのdb1をdb2へコピーしている
 `pg_dump -h 192.168.1.11 db1 | psql db2`
 
+# 設計での注意点
+
+## ソート処理で意識すべき点
+* ソート対象となるデータの数
+* メモリ上で完結するソートサイズか
+* インデックスの利用可否
+→ 上記を考慮してwork_memサイズを判断する
+
+## カーディナリティを意識する
+あるカラムがとりうる値の数(例えば性別だと男と女で2とか）のことをカーディナリティという。
+* 一般にインデックスはカーディナリティが高いカラムに設定する。
+
+## インデックスの付与を検討
+* 書き込み時にインデックスの再構築を行うため、インデックスが多すぎると書き込み性能が下がる。
+* やみくもに付けると利用されないケースが多い。
+→`select * from pg_stat_all_indexes;`の「idx_scan」を確認
+https://www.slideshare.net/InsightTechnology/dbts-osaka-2014-b23-postgresql-tomonari-katsumata
+
+## テーブルのレコード数の考慮
+* どのような処理でレコードが追加されるのかを検討する。
+* 業務系DBでは、マスタとトランザクションに大別する。
+* トランザクションデータはデータ数が増加しやすい。
+
+## 参照と更新のどちらが多いのかを考慮する
+* INSERT、UPDATE、DELETE処理はインデックスの再構築が行われる。
+* ロックやトランザクションを考慮する。
+* 参照処理はスケールアウトで解決しやすいが更新処理はスケールアップするしかない可能性が大。
+
+## SQLが遅くなる原因を考慮する
+* FROM、JOINによる無駄なテーブルスキャンが生じないか
+* 結合条件が多すぎないか。
+→JOINとWHEREを見直す
+* WHERE句では、インデックスの存在するカラムに対して関数を用いてもインデックスを利用しない。
+* Btreeインデックスでは、インデックスを利用したLIKE検索が使えない。
+* 処理フロー
+
+|No|内容|
+|-|-|
+|1|FROM|
+|2|JOIN|
+|3|WHERE|
+|4|GROUP BY|
+|5|HAVING|
+|6|SELECT|
+|7|ORDER BY|
+|8|LIMIT、OFFSET|
+|9|UNION、INTERSECT、EXCEPT|
+
+
+# パーティショニング
+## レンジパーティション
+
+パーティションキーの値を期間や範囲などで分割する方法
+下記に例を記載する。この場合、0~200、201~400という範囲で分割している。
+
+1. ユーザIDをパーティションキーにして親テーブルを作成
+```
+CREATE TABLE users (id int, name text) PARTITION BY RANGE (id);
+```
+
+2. 子テーブルを作成
+```
+CREATE TABLE users_200 PARTITION OF users FOR VALUES FROM (minvalue) TO (200);
+CREATE TABLE users_400 PARTITION OF users FOR VALUES FROM (201) TO (400);
+```
+
+3. ユーザテーブルにデータを挿入
+```
+INSERT INTO users VALUES (10, 'TARO'), (150, 'HANAKO'), (210, 'JIRO');
+```
+
+4. テーブルの中身確認(親テーブル)
+```
+SELECT * FROM users;
+ id  | name
+-----+-------
+  10 | TARO
+ 150 | HANAKO
+ 210 | JIRO
+(3 rows)
+```
+
+5. 各子テーブルを指定して、ユーザIDを元に振り分けられていることを確認
+```
+SELECT * FROM users_200;
+ id | name
+----+-------
+ 10 | TARO
+150 | HANAKO
+ (2 rows)
+
+SELECT * FROM users_400 ;
+ id  | name
+-----+-------
+ 210 | JIRO
+(1 row)
+```
+
+## リスト・パーティション
+
+パーティションキーの値をあらかじめ決められた値で分割する方法
+下記に例を記載する。この場合、Milan、Uve、Roma、Napoliというキーで分割している。
+
+1. teamをパーティションキーにして親テーブルを作成
+```
+CREATE TABLE clubs (id int, team text, player text) PARTITION BY LIST (team);
+```
+
+2. 子テーブルを作成
+```
+CREATE TABLE clubs_north PARTITION OF clubs FOR VALUES IN ('Milan', 'Uve');
+CREATE TABLE clubs_south PARTITION OF clubs FOR VALUES IN ('Roma', 'Napoli');
+```
+
+3. clubsにデータを挿入
+```
+INSERT INTO clubs VALUES (1, 'Milan', 'Pilro'), (2, 'Roma', 'Totti'), (3, 'Uve', 'Baggio');
+```
+
+4. テーブルの中身確認(親テーブル)
+```
+SELECT * FROM clubs;
+ id | team  | player
+----+-------+---------
+  1 | Milan | Pilro
+  3 | Uve   | Baggio
+  2 | Roma  | Totti
+(3 rows)
+```
+
+5. 各子テーブルを指定して、teamを元に振り分けられていることを確認
+```
+select * from clubs_north;
+ id | team  | player
+----+-------+---------
+  1 | Milan | Pilro
+  3 | Uve   | Baggio
+(2 rows)
+
+select * from clubs_south;
+ id | team  | player
+----+-------+---------
+  2 | Roma  | Totti
+(1 rows)
+```
+
+# Quorum-based同期レプリケーション(v10)
+同期/非同期の設定は「パ:synchronous_standby_names」に登録するかどうかで行う。
+例えばマスター1台、スレーブ4台の構成で、「synchronous_standby_names = 'First 2 (server1, server2, server3)'
+」のように設定した場合、server1とserver2は同期モード、server3とserver4はスレーブモードとなる。
+ただし、server1かserver2が故障した場合、server3が同期モードとなる。
+v10より前:server1とserver2の両方からマスターへ応答がない限り、マスターはコミットできない状態
+
+例えばマスター1台、スレーブ4台の構成で、「synchronous_standby_names = 'ANY 2 (server1, server2, server3)'
+」のように設定した場合、server1とserver2、server3は同期モード、server4はスレーブモードとなる。
+v10以降:server1とserver2とserver3、いずれかのサーバから2台の応答があればマスターはコミットできる状態
+
+# SQLパフォーマンスの分析
+
+* 以下のSQL文を修正することで性能向上
+* 実行回数の多いSQL文
+* 実行時間の長いSQL文
+
+```
+1.設定の追加
+$ vi $PGDATA/postgresql.conf
+shared_preload_library = "pg_stat_statements"を追加
+$ pg_ctl restart
+
+2.DBに登録（superuser権限で作成する）
+$ psql -d testdb
+testdb=# CREATE EXTENSION pg_stat_statements;
+
+3.作成後の確認
+testdb=# \d
+               List of relations
+ Schema |        Name        | Type  |  Owner
+--------+--------------------+-------+----------
+ public | carrental          | table | testuser
+ public | flight             | table | testuser
+ public | hotel              | table | testuser
+ public | person             | table | testuser
+ public | pg_stat_statements | view  | postgres ←追加
+ public | pgbench_accounts   | table | testuser
+ public | pgbench_branches   | table | testuser
+ public | pgbench_history    | table | testuser
+ public | pgbench_tellers    | table | testuser
+ public | trip               | table | testuser
+ public | triptype           | table | testuser
+ public | validation_table   | table | testuser
+
+4.pg_stat_statementsの読み方
+pg_stat_statementsは、以下に着目する。
+* 総実行時間（total_time）が大きいクエリ
+* 各クエリの平均実行時間（total_timeやcalls）はどれくらいか
+
+5.pgbenchを実行中に、total_timeの長い順に10件のランキングを取る
+⇒もう一方のTERMで以下のコマンドを使用し、pgbench実行
+$ /usr/pgsql-9.2/bin/pgbench -c 10 -t 1000
+
+testdb=# select substr(query, 0, 60) as query,calls,total_time FROM pg_stat_statements ORDER BY total_time DESC LIMIT 10;
+                            query                            | calls |    total_time
+-------------------------------------------------------------+-------+------------------
+ UPDATE pgbench_branches SET bbalance = bbalance + ? WHERE b | 10000 |       158923.879
+ UPDATE pgbench_branches SET bbalance = bbalance + ? WHERE b | 10000 | 156688.926000001
+ UPDATE pgbench_tellers SET tbalance = tbalance + ? WHERE ti | 10000 | 99468.7460000005
+ UPDATE pgbench_tellers SET tbalance = tbalance + ? WHERE ti | 10000 | 95227.1199999989
+ UPDATE pgbench_branches SET bbalance = bbalance + ? WHERE b |  4975 |        69764.715
+ UPDATE pgbench_tellers SET tbalance = tbalance + ? WHERE ti |  4980 | 42803.1069999999
+ UPDATE pgbench_accounts SET abalance = abalance + ? WHERE a | 10000 | 2911.40099999998
+ UPDATE pgbench_accounts SET abalance = abalance + ? WHERE a | 10000 | 2450.38700000001
+ copy pgbench_accounts from stdin                            |     1 |         1277.159
+ copy pgbench_accounts from stdin                            |     1 |         1
+
+pgbench_branches テーブルに対するUPDATEが10000回実行され、トータルで158,923ミリ秒（160秒）かかっていることが分かる。
+⇒1回のクエリ実行に16ミリ秒かかっている。
+
+6.pg_stat_statementsビュー値をリセット
+testdb=# SELECT pg_stat_statements_reset();
+```
+
+# お役立ち
+## インデックスとテーブル
+インデックスとテーブルのレコードは、ctidという「ポインタ」を介してつながっている
+
+## dockerでPostgres導入
+```
+①postgresqlを起動
+$docker run -d --name {コンテナ名} -e POSTGRES_PASSWORD={スーパユーザのパスワード} -p {コンテナへフォワードするホストのポート:フォワード先のコンテナのポート} postgres{:バージョン(指定しなければ最新)}
+
+→$docker run -d --rm --name postgres -e POSTGRES_PASSWORD=postgres00 -e POSTGRES_INITDB_ARGS="--encoding=UTF-8 --locale=C" -p 5432:5432 -v ~/data:/var/lib/postgresql/data postgres
+※rmを付与しているので、停止時にコンテナ削除
+
+②起動確認
+$docker container ls
+
+③コンテナへログイン
+$docker exec -ti postgres bash
+
+④データベースへログイン
+psql -U postgres -d template1
+
+※"docker run"で起動したプロセスは、"docker kill"で停止でき、"docker rm"で削除できるということ
+※永続化コマンドをするには、下記のコマンドを実行する。
+$ docker run -p 5432:5432 -d -it --name pg -e POSTGRES_PASSWORD=パスワード -v ~/data:/var/lib/postgresql/data postgres
+
+※~/dataは、ホームディレクトリの直下にdataディレクトリを予め作成する。
+/var/lib/postgresql/dataの部分は、PostgreSQLのデフォルトのデータの保存場所になる。
+
+※ファイルの編集
+まずはホスト側にコンテナ内のファイルをコピーする。
+
+docker container cp コンテナ名:/usr/local/etc/php/php.ini /home/user/test
+ホスト側編集が終われば、今度は、ホスト側からコンテナにコピーする。
+
+docker container cp /home/user/test/php.ini コンテナ名:/usr/local/etc/php/php.ini
+後は、コンテナを再起動すれば適応される。
+
+docker restart コンテナ名
+```
 
 
 
