@@ -86,10 +86,10 @@ OS:vacuumdb {DB}
 
 |順番|内容|備考|
 |-|-|-|
-|1|先頭からテーブルを読み込む。<br>VMをチェックし、不要行を含むページがあれば、ゴミタプルとして記録<br>※対象ページの全行をチェック<br>※meintenance_work_memを超えたら次のフェーズへ|Scanフェーズ|
+|1|先頭からテーブルを読み込む。<br>VMをチェックし、不要行を含むページがあれば、ゴミのタプルID(削除フラグ)を記録<br>※対象ページの全行をチェック<br>※記録したゴミタプルの量がmeintenance_work_memを超えたら次のフェーズへ|Scanフェーズ|
 |2|全ページを走査後、1の記録した不要行に対して、インデックスを削除|vacuumフェーズ|
-|3|不要なタプルを削除|vacuumフェーズ|
-|4|有効なタプルを並び替え(ブロック内のみ)|cleanupフェーズ|
+|3|テーブルの不要なタプルを削除<br>スキャンフェーズでテーブル全体をスキャンしていなければ再度スキャンフェーズを実行|vacuumフェーズ|
+|4|有効なタプルを並び替え(ブロック内のみ)<br>インデックスのクリーンアップ、テーブル末尾の切り詰めを実施。<br>インデックスがないテーブルはテーブルを1ページずつVACUUMを行う。<br>maintenance_work_memは利用しない。|cleanupフェーズ|
 |5|FSM更新|cleanupフェーズ|
 |6|pg_classのrelpages、reltuplesを更新|cleanupフェーズ|
 |7|CLOGを更新|cleanupフェーズ|
@@ -101,6 +101,19 @@ OS:vacuumdb {DB}
 ・ブロックをまたいで有効なタプルを並び変える  
 ・空のファイルを作成し、そのファイルにコピーしていく(容量が2倍になる)  
 ・ブロックを切り詰める
+
+### VACUUMログ詳細
+|ログ|内容|
+|-|-|
+|benchdb-# vacuum verbose pgbench_accounts;<br>INFO:  vacuuming "public.pgbench_accounts"|Vacuum開始時に出るログ。このログの直後からScan phaseに入る|
+|INFO:  scanned index "pgbench_accounts_pkey" to remove 113 row versions<br>DETAIL:  CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s|インデックスのVacuumが完了した時に出るログ。<br>インデックス個数分出力。<br>2行目は削除にかかった時間|
+|INFO:  "pgbench_accounts": removed 113 row versions in 111 pages<br>DETAIL:  CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s|テーブルのVacuumが完了した時に出るログ。<br>113タプルのゴミを削除<br>このログが出た後、Scan phaseに戻るか、Cleanup phaseに進む|
+|INFO:  index "pgbench_accounts_pkey" now contains 100000 row versions in 276 pages<br>DETAIL:  113 index row versions were removed.<br>0 index pages have been deleted, 0 are currently reusable.<br>CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s.|インデックスのCleanupが完了したログ|
+|INFO:  "pgbench_accounts": found 1721 removable, 100000 nonremovable row versions in 1701 out of 1701 pages|テーブルの削除したタプル、残ったタプル、ページ数の合計|
+|DETAIL:  0 dead row versions cannot be removed yet, oldest xmin: 801367|Vacuumしようとしたが他に参照する可能性のあるトランザクションがいるのでVacuum不可|
+|There were 669 unused item identifiers.|これはVacuum中に見つけた利用可能なItemIDの数|
+|Skipped 0 pages due to buffer pins, 0 frozen pages.|「Skipped 0 pages due to buffer pins」はバッファロックが競合してVacuumしようとしたけどできなかったページ数。|
+|0 pages are entirely empty.<br>CPU: user: 0.01 s, system: 0.00 s, elapsed: 0.02 s.|これはVacuum中に発見した空ページの数|
 
 ### クラッシュリカバリの流れ
 
@@ -130,7 +143,33 @@ OS:vacuumdb {DB}
  * 更新が頻繁に行われるテーブル、インデックスはFillfactorの値をデフォルトから下げる
  * create tableの際に、with句で設定する
  * 確認するにはpg_classカタログのreloptions列を参照
- 
+
+### fillfactorの設定値変更
+```
+ALTER TABLE pgbench_accounts SET (FILLFACTOR=85);
+```
+
+### fillfactiorの設定値を確認
+
+設定値の確認にはpg_classシステムカタログのreloptionsを確認
+
+* relname:テーブル、インデックス、ビューなどの名前
+* reloptions:「keyword=value」文字列のような、アクセスメソッド特有のオプション
+```
+select relname, reloptions from pg_class where reloptions is not null;
+
+-[ RECORD 1 ]-----------------
+relname      | pgbench_branches
+reloptions   | {fillfactor=100}
+-[ RECORD 2 ]-----------------
+relname      | pgbench_accounts
+
+reloptions   | {fillfactor=85}
+-[ RECORD 3 ]-----------------
+relname      | pgbench_tellers
+reloptions   | {fillfactor=100}]
+```
+
 # Index Only Scan
 * Index-Only-ScanはVisibility Mapのビットが立って入れば、テーブルは見ない。
 * selectの検索がインデックスのKeyのみの場合、テーブルへのアクセスを省略する。
@@ -344,6 +383,33 @@ ${PGDATA}/recovery.conf
 4.WALから更新トランザクションの適用  
 5.最新のWALまで更新トランザクションを適用  
 
+## サーバダウン、動作不良、データ消失への対処
+|事象|対処内容|備考|
+|-|-|-|
+|サーバが起動しない|次のコマンドでログを参照します。<br>`# cat ${PGDATA}/log/postgresql-*.log`|大体の原因は、メモリ不足、ポート番号重複、ファイルのアクセス権限、ファイル破損|
+|データ破損|`${PGDATA}/base/`にテーブル・インデックスの実ファイルがある。<br>index破損が破損した場合は、reindexコマンドでindex再作成する。<br>※ゼロ埋めではindexへの反応はしない。<br>`ignore_system_indexes = off`(開発向けオプション)にしてシステムテーブルの読み込み時にシステムインデックスを無視させる。<br>システムデータの破損では、シングルユーザモード`/usr/local/pgsql/bin/postgres --single`か`pg_ctl -o '-P' start`で起動してreindexを実行。<br>データ破損した場合は、`zero_damaged_pages = on`(開発向けオプション)にしてゼロ埋めします。||
+|データベースクラスタ破損|データベースクラスタの内容が壊れている場合は、pg_restxlogを実行||
+|チェックサムによる破損検知|読み込み過程でチェックサム障害が検出されると、通常PostgreSQLはエラーを報告し、現時点のトランザクションを停止する。<br>`ignore_checksum_failure=on`(開発向けオプション)にするとエラーを無視します。||
+|コミットファイル破損|次のddコマンドでゼロ埋めする。<br>`# dd if=/dev/sero of=${PGDATA}/pg_xact/0000 bs=1024 count=256`<br>`# chmod 600 ${PGDATA}/pg_xact/0000`||
+|データ欠損|不意な電源断などをした場合に、write-back方式の書き込みであればキャッシュしたデータがディスク書き込み前ではデータ欠損する。<br>write-through方式であれば、問題なし。<br>OSがキャッシュする恐れがあるため、WALの更新をディスクへ強制するのに使用するwal_sync_methodをOSに合わせて設定する。<br>fsyncやsynchronous_commitを無効にするとデータ損失のリスクが発生する。||
+
+## サーバプロセスのクラッシュ
+
+|事象|対処内容|備考|
+|-|-|-|
+|PANIC|postgresサービスが終了。<br>自動では起動しない||
+|クラッシュ|保存していない部分が破損の可能性あり。<br>PITRでの復旧が必須||
+|OOM-Killer|OSのメモリ不足。<br>新規のコネクションは受け付けない。<br>PostgreSQLの再移動が必要。|一時対応として、スワップ領域を大きくし、メモリを枯渇させない。|
+
+## その他
+|用語|内容|備考|
+|-|-|-|
+|commit_delay(on)|有効にしても常に待機するわけではなく、commit_siblings値(5)以上のトランザクションが発生した場合のみコミットを遅延する||
+|synchronous_commit(on)|トスタンバイサーバーの同期レベル|synchronous_standby_names が設定されていなければ、on、remote_write、local の設定は全て同一の同期レベルを提供|
+|大量データ投入|・自動コミットOFF<br>・インデックスキーを削除<br>・maintenance_work_memを増やす|大量のデータ投入は大量のWALが発生するのでcheckpoint_timeoutの操作はあまり効果なし|
+|インデックス付与でクエリが遅い|・random_page_costの値が適切な値より小さい<br>→オプティマイザはインデックスアクセスが高速であると判断<br>・effective_cache_sizeの値が適切な値より小さい<br>→オプティマイザはインデックスアクセスが低速であると判断<br>・seq_page_costの値が適切な値より小さい<br>→オプティマイザは実際よりもシーケンシャルアクセスが高速であると判断|
+|1つ前のクエリを繰り返す|\watch 1;|1秒置きに繰り返すということ|
+
 # 統計情報
 ||アクセス統計情報|テーブル(カラム)統計情報|備考|
 |-|-|-|-|
@@ -374,7 +440,14 @@ ${PGDATA}/recovery.conf
 * `REINDEX table table名;`
 →テーブルに貼られた全インデックス再構築
 * `REINDEX database database名;`
-→データベースに存在する全インデックス再構築
+→データベースに存在する全インデックス再構築  
+
+* テーブルの書き込みと処理中のインデックスに対し、AccessExclusiveLog(排他ロック)がかかる。  
+* ShareUpdateExclusiveLock:更新不可、SELECTもブロック  
+* v12でconcurrentlyオプションに対応  
+* 対象テーブルに対してShareUpdateExclusiveLock、インデックスに対してExclusiveLockのロックが取得。  
+* ShareUpdateExclusiveLock:SELECT、UPDATE、DELETE、INSERTはOK  
+* ExclusiveLock:SELECTははOK  
 
 ## Nested Loop(ネステッドループ結合)
 * 外側テーブル1行ごとに内側テーブルを1周ループしながら結合
@@ -425,6 +498,22 @@ F   UID   PID  PPID PRI  NI   VSZ  RSS WCHAN  STAT TTY        TIME COMMAND
 |-|-|-|
 |1|初期化|`pgbench -i {DB名}`<br>"-s 10"をつけると10万件となる<br>デフォルトでは1万件|
 |2|実行|`pgbench -c 10 -t 10 {DB名}`<br>c:接続数<br>t:1クライアントあたりのトランザクション数|
+
+```
+$ pgbench -c 10 -t 1000 pgbench1
+
+※c 10 10人のユーザを想定
+※t 1000は1000回のトランザクションを実行
+→デフォルトで、下記5つの処理を1トランザクションとして1クライアントから10回実行
+上記の例では、10クライアントから10クライアントに対し、1000回のトランザクションを実行
+流れとしては、下記
+1.VACUUM実施
+2.pgbench_accountsを1件更新
+3.pgbench_accountsから1件参照
+4.pgbench_tellersを1件更新
+5.pgbench_branchesを1件更新
+6.pgbench_historyに1件追加
+```
 
 ## 第二正規形
 
@@ -1477,6 +1566,130 @@ testdb=# SELECT isdirty,count(*) FROM pg_buffercache GROUP BY isdirty;
 
 ```
 
+## 自動VACUUMの発生回数、発生時間を確認する
+pg_stat_all_tablesビューで自動VACUUMの実行情報を確認することが可能
+* autovacuum_count: 自動VACUUMが実行された回数
+* last_autovacuum: 最後に自動VACUUMが実行された時間
+* autoanalyze_count: 自動VACUUMによってANALYZEが実行された回数
+```
+select * from pg_stat_all_tables where relname='pgbench_accounts';
+
+relid               | 18600
+schemaname          | public
+relname             | pgbench_accounts
+seq_scan            | 2
+seq_tup_read        | 100000
+idx_scan            | 80000
+idx_tup_fetch       | 80000
+n_tup_ins           | 100000
+n_tup_upd           | 40000
+n_tup_del           | 0
+n_tup_hot_upd       | 37458
+n_live_tup          | 100000
+n_dead_tup          | 3596
+n_mod_since_analyze | 6941
+last_vacuum         | 2021-03-15 04:38:34.219773+00
+last_autovacuum     | 2021-03-15 04:38:59.59984+00
+last_analyze        | 2021-03-15 04:38:34.266272+00
+last_autoanalyze    | 2021-03-30 01:35:32.569855+00
+vacuum_count        | 1
+autovacuum_count    | 1
+analyze_count       | 1
+autoanalyze_count   | 4
+```
+
+## マテビューの作成と動作(検証)
+
+* ビューは実体を持たないが、マテビューは実体を持つ
+* 複雑な検索・集計処理でも高速に結果を得ることが可能
+* リフレッシュにより最新状態に保つ
+
+1.下記、結合条件を利用したSELECT文のCOSTは17418
+```
+testdb3=# explain select tid, abalance from pgbench_accounts a, pgbench_history h where a.aid=h.aid order by h.bid;
+                                         QUERY PLAN
+
+--------------------------------------------------------------------------------------------
+ Sort  (cost=17167.92..17418.58 rows=100264 width=12)
+   Sort Key: h.bid
+   ->  Hash Join  (cost=4398.00..8839.27 rows=100264 width=12)
+         Hash Cond: (h.aid = a.aid)
+         ->  Seq Scan on pgbench_history h  (cost=0.00..1691.64 rows=100264 width=12)
+         ->  Hash  (cost=2757.00..2757.00 rows=100000 width=8)
+               ->  Seq Scan on pgbench_accounts a  (cost=0.00..2757.00 rows=100000 width=8)
+(7 rows)
+```
+
+2.マテリアライズドビューの作成
+※上記結合条件を元にpgbench_matビューを作成
+```
+testdb3=# create materialized view pgbench_mat as select tid, abalance from pgbench_accounts a, pgbench_history h where a.aid=h.aid order by h.bid;
+SELECT 100000
+```
+
+3.マテビューを利用した全件検索のコスト1443→コストが減っている
+```
+testdb3=# explain select * from pgbench_mat;
+                            QUERY PLAN
+-------------------------------------------------------------------
+ Seq Scan on pgbench_mat  (cost=0.00..1443.00 rows=100000 width=8)
+```
+
+4.tidが10であるデータの確認
+```
+testdb3=# select * from pgbench_mat where tid='10';
+ tid | abalance
+-----+----------
+  10 |     6301
+  10 |    11522
+  10 |     5548
+  10 |     3668
+  10 |     6328
+途中省略
+  10 |    -1931
+  10 |    -1606
+  10 |     -572
+  10 |   -14935
+  10 |     4190
+```
+
+5.元テーブルからtid=10であるデータの作成
+```
+testdb3=# delete from pgbench_history where tid='10';
+```
+
+6.マテビューを確認するとまだデータが保持されている
+```
+testdb3=# select * from pgbench_mat where tid='10';
+ tid | abalance
+-----+----------
+  10 |     6301
+  10 |    11522
+  10 |     5548
+  10 |     3668
+  10 |     6328
+途中省略
+  10 |    -1931
+  10 |    -1606
+  10 |     -572
+  10 |   -14935
+  10 |     4190
+```
+
+7.マテビューをリフレッシュ
+```
+testdb3=# refresh materialized view pgbench_mat ;
+REFRESH MATERIALIZED VIEW
+```
+
+8.マテビューを確認すると0件
+```
+testdb3=# select * from pgbench_mat where tid='10';
+ tid | abalance
+-----+----------
+(0 rows)
+```
+
 # 拡張モジュール
 
 ## 拡張モジュールの導入確認
@@ -1836,8 +2049,25 @@ testdb=# SELECT pg_stat_statements_reset();
 ## インデックスとテーブル
 インデックスとテーブルのレコードは、ctidという「ポインタ」を介してつながっている
 
+# 覚えておきたい
 
-```
+|用語|説明|備考|
+|-|-|-|
+|pg_xact|コミットログの出力先ディレクトリ|pg_resetwalで次のトランザクションIDを指定する場合に利用|
+|pg_multixact|マルチトランザクション状態のデータを保有するディレクトリ|共有ロックで利用<br>配下にmembersとoffsetsディレクトリあり|
+|pg_notify|メッセージを送信する関数||
+|pg_serial|コミットされたシリアライザブルトランザクションに関する情報を保存||
+|pg_snapshots|エクスポートされたスナップショットを保有するディレクトリ|GetSnapshotData()関数により取得|
+|pg_stat_tmp|統計情報コレクタやバキューム情報を一時的に格納するディレクトリ||
+|pg_subtrans|サブトランザクションの状態を保有するディレクトリ|セーブポイントとか|
+|pg_tblspc|テーブル空間のシンボリックリンクを保存するディレクトリ||
+|pg_twophase|プリペアドトランザクション用の状態ファイルを保有するサブディレクトリ|ex)<br>prepare transaction 'xxx';|
+|pg_stat_ssl|SSL接続情報を報告するシステムビュー||
+|pgcrypto|データの暗号化|ex)<br>CREATE EXTENSION PGCRYPTO;<br>create table test(id int, name bytea);<br>name列が暗号化<br>INSERT INTO test VALUES ( 10, pgp_sym_encrypt('TARO', 'taro00'));|
+|track_functions|ユーザ定義関数の使用状況を追跡|デフォルト無効|
+|track_activities|各セッションで実行中のコマンドに関する情報とそのコマンドの実行開始時刻の収集|デフォルト有効|
+|ignore_checksum_failure|ストレージからセグメント読み込み時にチェック。<br>破損が検出された場合でもPostgreSQLにトランザクションの処理を継続|デフォルト無効|
+|ignore_system_indexes|システムテーブルの読み込み時にシステムインデックスを無視|開発向けオプション|
 
 
 
