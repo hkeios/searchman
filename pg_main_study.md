@@ -1,8 +1,8 @@
 # 構築手順
-### インストール
-### マスタ構築
-#### postgresql.conf修正
-#### pg_hba.conf修正
+## インストール
+## マスタ構築
+## postgresql.conf修正
+## pg_hba.conf修正
 
 ### スレーブ構築
 #### マスタの複製
