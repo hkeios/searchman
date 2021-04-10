@@ -1045,7 +1045,7 @@ $ pg_xlogdump 000000010000000000000006
 ![img2](img/WS000002.JPG)
 ![img3](img/WS000003.JPG)
 
-##select ~ for update;の挙動
+## select for updateの挙動
 select文で選択したレコードに対して排他ロックをかけるのだが、実際に試したことがないので、検証してみた。  
 
 排他ロックとは、一方が操作している間、もう一方の「update,delete,select for update」とかを実行しようとするとブロックされること。  
