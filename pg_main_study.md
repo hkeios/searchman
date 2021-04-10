@@ -1024,6 +1024,136 @@ testdb3=# select count(*) from pgbench_history;
 →テーブルのrelfilenodeも一緒なので、データのみリストアされたことがわかる
 ```
 
+## pg_xlogdumpを利用してみる
+
+１．contribモジュールのインストール確認  
+```
+$ rpm -aq | grep postgres
+→contribパッケージがインストールされていることを確認
+```
+![img0](img/WS000000.JPG)
+![img1](img/WS000001.JPG)
+
+２．WALファイルを確認  
+```
+$ cd $PGDATA/xlog
+$ ls -l
+  000000010000000000000006  000000010000000000000008
+  000000010000000000000007  archive_status
+$ pg_xlogdump 000000010000000000000006
+```
+![img2](img/WS000002.JPG)
+![img3](img/WS000003.JPG)
+
+##select ~ for update;の挙動
+select文で選択したレコードに対して排他ロックをかけるのだが、実際に試したことがないので、検証してみた。  
+
+排他ロックとは、一方が操作している間、もう一方の「update,delete,select for update」とかを実行しようとするとブロックされること。  
+以下はブロックされる
+```
+update
+delete
+insert
+for update
+for share
+```
+select文はOKなんだね。  
+ただし、delete文については確かにロックによる待ちが発生  
+![img4](img/WS000004.JPG)
+![img5](img/WS000005.JPG)
+
+## vacuum fullの検証
+マニュアルとか見ると下記のような特徴があるらしい。  
+* 不要領域を回収
+* 実行中は読み書き不可
+* 中間ファイルを作成し、新たなタプルID（TID）を作成する
+
+■vacuum full前  
+```
+①テスト用テーブル(test3)の作成
+testdb=# create table test3 as select generate_series(1,999999) col1;
+
+②いくつかdelete文、update文を実施
+testdb=# delete from test3 where col1=XXXX;
+testdb=# update test3 set col1=XXXXXXXXX where col1=XXXX;
+
+③サイズの確認
+testdb=# select pg_relation_size('test3');
+-[ RECORD 1 ]----+---------
+pg_relation_size | 36249600　
+
+④不要領域の確認
+testdb=# SELECT relname, n_live_tup, n_dead_tup, round(n_dead_tup*100/n_live_tup,2) AS ratio FROM pg_stat_user_tables WHERE relname = 'test3';
+-[ RECORD 1 ]------
+relname    | test3
+n_live_tup | 999701
+n_dead_tup | 298
+ratio      | 0.00
+→n_dead_tup デッドタプルを確認する
+
+⑤select 文の結果
+testdb=# select count(*) from test3;
+-[ RECORD 1 ]-
+count | 999701
+
+⑥ディスクサイズ
+[postgres@11:00:47 ~/9.6/data {8}]$ du -sk base
+250016  base
+```
+
+■vacuum full実行時
+```
+①vacuum full実行
+testdb=# vacuum full verbose;
+→test3テーブルだけでなく、ついでに全テーブルを対象とする
+
+②select 文の結果
+→vacuum full完了まで待ち
+testdb=# select count(*) from test3;
+ count
+--------
+ 999701
+(1 行)
+
+③ディスクサイズの推移
+2017年  4月 15日 土曜日 11:02:28 JST
+250016  base
+
+2017年  4月 15日 土曜日 11:02:29 JST
+282592  base　★中間ファイルを作成？している間、一時的に増加
+
+2017年  4月 15日 土曜日 11:02:30 JST
+250264  base
+
+2017年  4月 15日 土曜日 11:02:31 JST
+249632  base
+
+2017年  4月 15日 土曜日 11:02:32 JST
+249632  base
+```
+
+■vacuum full後
+```
+①サイズの確認
+testdb=# select pg_relation_size('test3');
+-[ RECORD 1 ]----+---------
+pg_relation_size | 36241408
+
+②不要領域の確認
+testdb=# SELECT relname, n_live_tup, n_dead_tup, round(n_dead_tup*100/n_live_tup,2) AS ratio FROM pg_stat_user_tables WHERE relname = 'test3';
+-[ RECORD 1 ]------
+relname    | test3
+n_live_tup | 999701
+n_dead_tup | 0
+ratio      | 0.00
+→n_dead_tup デッドタプルを確認する
+
+③ディスクサイズ
+[postgres@11:07:39 ~/9.6/data {10}]$ du -sk base
+248760  base
+→減っているね
+```
+
 ## ロングトランザクション
 ```
 ロングトランザクションはHOTだけでなくVACUUMも阻害する。
