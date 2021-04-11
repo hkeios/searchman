@@ -310,12 +310,16 @@ ${PGDATA}/recovery.conf
 </tr>
 <tr>
 <td>local</td>
-<td colspan="2">プライマリのWALは同期書き込み、スタンバイは非同期</td>
+<td colspan="2">プライマリのWALは同期書き込み、スタンバイは非同期<br>プライマリはスタンバイがWALログを書き込み、Flushしたかは確認しない</td>
 </tr>
 <tr>
 <td>on</td>
 <td>プライマリのWALのみ同期書き込み</td>
 <td>スタンバイのWALを同期で書き込むのをプライマリは待つ</td>
+</tr>
+<tr>
+<td>remote_writes</td>
+<td colspan="2">スタンバイ機でのWALのディスク書き込みだけでなく、WALの記述内容がデータベースに適用されたタイミングでコミット成功</td>
 </tr>
 </table>
 
