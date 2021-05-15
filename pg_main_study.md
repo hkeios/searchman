@@ -212,8 +212,22 @@ reloptions   | {fillfactor=100}]
 
 # レプリケーション
 
+* ホットスタンバイ ログシッピング方式  
+ストリーミングレプリケーション：WALをファイル単位ではなく、変更単位で送る。16MBたまったら送るわけではない(トランザクション単位)。  
+メジャーバージョンは合わせる必要がある。
+
 ## レプリケーションスロット
 masterがslaveに必要なWALを判別して、自動削除しないように操作する仕組み。レプリケーション方法と合わせて、下記に設定を示す。  
+
+## レプリケーションユーザ
+レプリケーション権限を持つユーザを用意してあげることを推奨
+```
+=# create user repl_user login replication password 'XXX';
+```
+* pg_hba.conf
+```
+host replication repl_user XXX.XXX.XXX.XXX/24
+```
 
 ## レプリケーション【非同期】
 
@@ -223,12 +237,12 @@ ${PGDATA}/postgresql.conf
 
 |設定|内容|
 |-|-|
-|max_wal_senders=2|1以上|
+|max_wal_senders=2|スタンバイ数⁺1台|
 |wal_level=replica|V9.5以前のarchive、hot_standbyに相当|
 |archive_mode=on|スタンバイDBの数⁺1|
 |max_replication_slots=1|スタンバイDBの数|
 |archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※設定例|WALをアーカイブ領域にコピーするコマンド|
-|synchronous_commit=※1|同期レベル|
+|synchronous_commit=off ※1|同期レベル|
 |synchronous_standby_names=設定なし|この設定で同期か非同期に分かれる|
 
 * レプリケーションスロット設定
@@ -262,13 +276,13 @@ ${PGDATA}/postgresql.conf
 
 |設定|内容|
 |-|-|
-|max_wal_senders=2|1以上|
+|max_wal_senders=2|スタンバイ数⁺1台|
 |wal_level=replica|V9.5以前のarchive、hot_standbyに相当|
 |archive_mode=on|スタンバイDBの数⁺1|
 |max_replication_slots=1|スタンバイDBの数|
 |archive_command='test ! -f /pg_archive/%f && /bin/cp %p /pg_archive/%f' ※設定例|WALをアーカイブ領域にコピーするコマンド|
-|synchronous_commit=※1|同期レベル|
-|synchronous_standby_names='slave1'|同期するスタンバイ名|
+|synchronous_commit=on ※1|同期レベル|
+|synchronous_standby_names='slave1' ※2|同期するスタンバイ名|
 |host_standby_feedback=on|自身の情報をマスターに送信|
 
 * レプリケーションスロット設定
@@ -294,7 +308,7 @@ ${PGDATA}/recovery.conf
 |recovery_target_timeline=latest||
 |restore_command=’cp /pg_archive/%f %p’ ※設定例|アーカイブをpg_walに戻すコマンド|
 
-※1:非同期/同期に関連するパラメータ
+※1:非同期/同期に関連するパラメータ。offとlocalは非同期扱い
 
 <table>
 <td></td><td colspan="2" align=center><b>synchronous_standby_names</b></td>
@@ -322,6 +336,16 @@ ${PGDATA}/recovery.conf
 <td colspan="2">スタンバイ機でのWALのディスク書き込みだけでなく、WALの記述内容がデータベースに適用されたタイミングでコミット成功</td>
 </tr>
 </table>
+
+※2:パターンは下記の通り
+
+|No|パターン|説明|
+|-|-|-|
+|1|カンマ区切り|全てが同期|
+|2|FIRST N|最初からN番目まで同期|
+|3|ANY N|いずれかのN台が同期|
+
+* 旧プライマリをスタンバイとして構成を組みなおす場合、${PGDATA}にstandby.signalファイルを作成する必要がある
 
 # 障害対応
 ## システムテーブル(pg_xxx)のインデックスの破損対応
