@@ -1,5 +1,13 @@
 # 構築手順
 ## インストール
+### PG V14編
+```
+$ tar xjf postgresql-14beta1.tar.bz2
+$ cd postgresql-14beta1
+$ ./configure --enable-cassert --enable-debug
+$ mak && make install
+```
+
 ## マスタ構築
 ## postgresql.conf修正
 ## pg_hba.conf修正
@@ -38,7 +46,11 @@
 |5.|WALログファイルに同期書き込み||
 |6.|CLOGの更新、XIDをCOMMITEDに変更。VACUUMが削除するまで残る||
 
-前回のチェックポイント後に、初めてタプルが追加されたブロックは、ブロック全体をWALへ書き込む。  
+前回のチェックポイント後に、初めてタプルが追加されたブロックは、ブロック全体をWALへ書き込む。(`full_page_writes=on`の時)  
+`wal_compression=on`  
+fpw=onのWALイメージを圧縮できる  
+`full_page_writes=off`の時でもバックアップ時(pg_basebackup)は自動的にon扱いとなる。  
+
 同じブロックへのタプルの追加は差分のみWALへ書き込む
 
 ### WALログ(pg_wal)の切り替えタイミング
