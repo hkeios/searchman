@@ -255,3 +255,16 @@ $ ssh -i id_rsa user1@XXX.XXX.XX.XX
 ※id_rsaはサーバAAAのuser1の秘密鍵
 踏み台BBBの任意のユーザからサーバAAAのuser1へSSHログインする
 ```
+
+# VMWARE
+### 1. 構成ファイル
+
+|NO|内容|手順|
+|-|-|-|
+|1|.vmx|仮想マシン情報(メイン)|
+|2|.vmdk|仮想ディスク|
+|3|.vmxf|追加構成情報|
+|4|.vmss|サスペンド状態保存ファイル|
+|5|.nvram|BIOS状態記憶ファイル|
+|6|.vmem|仮想メモリ|
+|7|.vmsd|スナップショット|
